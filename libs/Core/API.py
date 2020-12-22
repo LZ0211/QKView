@@ -1,13 +1,22 @@
 import requests
 import json,base64,re,os,platform
+from urllib import parse
+from uuid import uuid3,uuid4
+from uuid import UUID
+
+NAMESPACE = UUID('63e816118377ae5a4387d7b18820752a')
+reg_braket = re.compile(r'^\{\s*(\w+)\s*\}$')
+reg_double_braket = re.compile(r'^\{\{\s*(\S+)\s*\}\}$')
 
 HOST = 'http://172.16.11.164'
+PUBCHEM_HOST = 'https://pubchem.ncbi.nlm.nih.gov'
 
 JSON_HEADERS = {'Content-Type': 'application/json'}
 
 TIMEOUT = 5
 
 SketcherURL = HOST + "/static/sketcher/"
+IndrawURL = HOST + "/static/indraw/index.html"
 
 def mol2can(mol):
     url = HOST + '/job/submit/obabel/mol2can'
@@ -44,7 +53,20 @@ def mol2png(mol):
     url = HOST + '/job/submit/obabel/mol2png'
     data = {'mol':mol}
     res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
-    pdb = json.loads(res.text)["data"]
+    str = json.loads(res.text)["data"]
+    return str
+
+def mol2mol2D(mol):
+    url = HOST + '/job/submit/obabel/convert'
+    data = {
+        'inp': 'mol',
+        'out':'mol',
+        'data':mol,
+        'other':'--gen2d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    mol = json.loads(res.text)["data"]
+    return mol
 
 def pdb2can(pdb):
     url = HOST + '/job/submit/obabel/pdb2can'
@@ -54,15 +76,46 @@ def pdb2can(pdb):
 
 def pdb2mol(pdb):
     url = HOST + '/job/submit/obabel/convert'
-    res = requests.post(url,json={'inp': 'pdb','out':'mol','data':pdb},headers=JSON_HEADERS, timeout=TIMEOUT)
+    data = {
+        'inp': 'pdb',
+        'out':'mol',
+        'data':pdb,
+        'other':'--gen3d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     mol = json.loads(res.text)["data"]
     return mol
 
 def pdb2xyz(pdb):
     url = HOST + '/job/submit/obabel/convert'
-    res = requests.post(url,json={'inp': 'pdb','out':'xyz','data':pdb},headers=JSON_HEADERS, timeout=TIMEOUT)
+    data = {
+        'inp': 'pdb',
+        'out':'xyz',
+        'data':pdb,
+        'other':'--gen3d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     xyz = json.loads(res.text)["data"]
     return xyz
+
+def pdb2png(pdb):
+    url = HOST + '/job/submit/obabel/pdb2png'
+    data = {'pdb':pdb}
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    str = json.loads(res.text)["data"]
+    return str
+
+def pdb2mol2D(pdb):
+    url = HOST + '/job/submit/obabel/convert'
+    data = {
+        'inp': 'pdb',
+        'out':'mol',
+        'data':pdb,
+        'other':'--gen2d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    mol = json.loads(res.text)["data"]
+    return mol
 
 def xyz2can(xyz):
     url = HOST + '/job/submit/obabel/xyz2can'
@@ -72,17 +125,54 @@ def xyz2can(xyz):
 
 def xyz2mol(xyz):
     url = HOST + '/job/submit/obabel/convert'
-    res = requests.post(url,json={'inp': 'xyz','out':'mol','data':xyz},headers=JSON_HEADERS, timeout=TIMEOUT)
+    data = {
+        'inp': 'xyz',
+        'out':'mol',
+        'data':xyz,
+        'other':'--gen3d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     mol = json.loads(res.text)["data"]
     return mol
 
 def xyz2pdb(xyz):
     url = HOST + '/job/submit/obabel/convert'
-    res = requests.post(url,json={'inp': 'xyz','out':'pdb','data':xyz},headers=JSON_HEADERS, timeout=TIMEOUT)
+    data = {
+        'inp': 'xyz',
+        'out':'pdb',
+        'data':xyz,
+        'other':'--gen3d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     pdb = json.loads(res.text)["data"]
     return pdb
 
-def smi2mol2D(smi):
+def xyz2png(xyz):
+    url = HOST + '/job/submit/obabel/xyz2png'
+    data = {'xyz':xyz}
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    str = json.loads(res.text)["data"]
+    return str
+
+def xyz2mol2D(xyz):
+    url = HOST + '/job/submit/obabel/convert'
+    data = {
+        'inp': 'xyz',
+        'out':'mol',
+        'data':xyz,
+        'other':'--gen2d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    mol = json.loads(res.text)["data"]
+    return mol
+
+def smi2mol2D1(smi):
+    url = 'http://121.42.137.238/chemmol/src/server/smiToMol.php?smiles='+parse.quote(smi)
+    res = requests.get(url,timeout=TIMEOUT)
+    mol = json.loads(res.text)["data"]["mol"]
+    return mol
+
+def smi2mol2D2(smi):
     url = HOST + '/job/submit/obabel/convert'
     data = {
         'inp': 'smi',
@@ -94,8 +184,54 @@ def smi2mol2D(smi):
     mol = json.loads(res.text)["data"]
     return mol
 
+def smi2mol(smi):
+    url = HOST + '/job/submit/obabel/convert'
+    data = {
+        'inp': 'smi',
+        'out':'mol',
+        'data':smi,
+        'other':'--gen3d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    mol = json.loads(res.text)["data"]
+    return mol
+
+def smi2xyz(smi):
+    url = HOST + '/job/submit/obabel/convert'
+    data = {
+        'inp': 'smi',
+        'out':'xyz',
+        'data':smi,
+        'other':'--gen3d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    xyz = json.loads(res.text)["data"]
+    return xyz
+
+def smi2pdb(smi):
+    url = HOST + '/job/submit/obabel/convert'
+    data = {
+        'inp': 'smi',
+        'out':'pdb',
+        'data':smi,
+        'other':'--gen3d'
+    }
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    pdb = json.loads(res.text)["data"]
+    return pdb
+
+def smi2png(smi):
+    url = HOST + '/job/submit/obabel/smi2png'
+    data = {'smi':smi}
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    str = json.loads(res.text)["data"]
+    return str
+
 def base64ToImage(string):
-    return base64.b64decode(string.split(';base64,')[1])
+    arr = string.split(';base64,')
+    if len(arr) == 2:
+        string = arr[1]
+    return base64.b64decode(string)
 
 Periodic_Table={
     #No. Symbol, Mass, Electronegativity, Orbits
@@ -187,23 +323,30 @@ Periodic_Table={
     "Rn":(86,"Rn",222,None,((2),(2,6),(2,6,10),(2,6,10),(2,6),(14),(10),(2,2)))
 }
 
-Organic_Elements = ['B','Si','C','P','N','H','S','O','F','Cl','Br','I']
+Organic_Elements = ['B','Si','C','H','O','N','P','S','F','Cl','Br','I']
+Metal_Elements = ['Li','Be','Na','Mg','Al','K','Ca','Sc','Ti','V','Cr','Mn','Fe','Co','Ni','Cu','Zn','Rb','Sr','Y','Zr','Nb','Mo','Tc','Ru','Rh','Pd','Ag','Cd','In','Sn','Sb','Cs','Ba','La','Ce','Pr','Nd','Pm','Sm','Eu','Gd','Tb','Dy','Ho','Er','Tm','Yb','Lu','Hf','Ta','W','Re','Os','Ir','Pt','Au','Hg','Tl','Pb','Bi','Po','At','Rn']
 
-Element_Patterm = re.compile(r'([a-zA-Z]{1,2})(\d+)')
+Element_Patterm = re.compile(r'([A-Z][a-z]?)(\d*)')
+def calcAtomList(xyz):
+    lines = xyz.split('\n')
+    count = int(lines[0])
+    atoms = []
+    for line in lines[2:2+count]:
+        symbol = line.split()[0]
+        atoms.append(symbol)
+    return atoms
+
 def calcFormularMass(formular):
     elements = Element_Patterm.findall(formular)
     sum = 0
     for pair in elements:
         k,v = tuple(pair)
-        sum += Periodic_Table[k][2] * int(v)
+        sum += Periodic_Table[k][2] * int(v or 1)
     return sum
 
-def calcFormular(xyz):
-    lines = xyz.split('\n')
-    count = int(lines[0])
+def calcFormular(atoms):
     records = {}
-    for line in lines[2:2+count]:
-        symbol = line.split()[0]
+    for symbol in atoms:
         if symbol in records:
             records[symbol] += 1
         else:
@@ -212,9 +355,22 @@ def calcFormular(xyz):
     for element in elements:
         if not element in Organic_Elements:
             elements.sort(key=lambda x:Periodic_Table[x][3])
-            return "".join(map(lambda k:k+str(records[k]),elements))
+            return "".join(map(lambda k:k+str(records[k] if records[k] > 1 else ""),elements))
     elements.sort(key=lambda x:Organic_Elements.index(x))
-    return "".join(map(lambda k:k+str(records[k]),elements))
+    formular = "".join(map(lambda k:k+str(records[k] if records[k] > 1 else ""),elements))
+    special = {#无机物
+        "H3N":"NH3",
+        "H3P":"PH3",
+        "CH2O3":"H2CO3",
+        "H2O4S":"H2SO4",
+        "HO3N":"HNO3",
+        "H3O4P":"H3PO4",
+        "BH3O3":"H3BO3",
+        "SiH4O4":"H4SiO4",
+    }
+    if formular in special:
+        return special[formular]
+    return formular   
 
 def calcXYZMass(xyz):
     return calcFormularMass(calcFormular(xyz))
@@ -227,7 +383,7 @@ def download(url,file):
                 hander.write(chunk)
     
 def getLanguages(dirname):
-    files = os.listdir(os.path.join(dirname,"languages"))
+    files = os.listdir(dirname)
     langs = filter(lambda file:os.path.splitext(file)[1]==".lang",files)
     return list(map(lambda file:os.path.splitext(file)[0],langs))
 
@@ -236,3 +392,90 @@ PATH_SEG = '\\' if SYSTEM == 'Windows' else '/'
 
 def formatPath(path):
     return path.replace('/','\\').replace('\\',PATH_SEG)
+
+PubChem_Properties = ['MolecularFormula','MolecularWeight','InChI','InChIKey','IUPACName','XLogP','TPSA','Charge','Volume3D']
+def searchPubchem(smi):
+    properties = ",".join(PubChem_Properties)
+    smiles = parse.quote(smi)
+    res = requests.get('%s/rest/pug/compound/smiles/%s/property/%s/json' % (PUBCHEM_HOST,smiles,properties))
+    dict = json.loads(res.text)["PropertyTable"]["Properties"][0]
+    dict["CAS"] = ""
+    #搜索CAS号
+    res = requests.get('%s/rest/pug/compound/smiles/%s/synonyms/txt' % (PUBCHEM_HOST,smiles))
+    reg = re.compile(r'\d{2,7}-\d{2}-\d')
+    found = reg.findall(res.text)
+    if len(found) >= 1:
+        #found.sort(key=lambda x:len(x))
+        dict["CAS"] = found[0]
+    return dict
+
+def md5(string):
+    return str(uuid3(NAMESPACE,string))
+
+def smi2chg(smi):
+    return len(smi.split('+')) - len(smi.split('-'))
+
+def pubChemURI(smi):
+    try:
+        res = requests.get('%s/rest/pug/compound/smiles/cids/json?smiles=%s' % (PUBCHEM_HOST,parse.quote(smi)))
+        data = json.loads(res.text)
+        cid = data['IdentifierList']['CID'][0]
+        return '%s/compound/%s' % (PUBCHEM_HOST,cid)
+    except:
+        return PUBCHEM_HOST
+
+def getKey(dict,key):
+    if key in dict and dict[key] != "":
+        return dict[key]
+    return None
+
+def hashReplace(hash,dict):
+    for key in dict:
+        if key in hash:
+            val = hash[key]
+            del hash[key]
+            hash[dict[key]] = val
+    return hash
+
+def read_job_status(id):
+    res = requests.get('{host}/job/status?id={id}'.format(host=HOST,id=id))
+    return json.loads(res.text)['data']
+
+def read_gauss_status(name,job):
+    res = requests.post('{host}/job/search/gauss/{job}'.format(host=HOST,job=job),
+        json={'name':name}
+    )
+    return json.loads(res.text)['data']
+
+def read_mwfn_status(name,job):
+    res = requests.post('{host}/job/search/mwfn/{job}'.format(host=HOST,job=job),
+        json={'name':name}
+    )
+    return json.loads(res.text)['data']
+
+def read_xtb_status(name,job):
+    res = requests.post('{host}/job/search/xtb/{job}'.format(host=HOST,job=job),
+        json={'name':name}
+    )
+    return json.loads(res.text)['data']
+
+def read_gauss_data(name,job,info='summary'):
+    res = requests.post('{host}/job/data/gauss/{job}'.format(host=HOST,job=job),
+        json={
+            'name':name,
+            'info':info
+        }
+    )
+    return json.loads(res.text)['data']
+
+def read_mwfn_data(name,job):
+    res = requests.post('{host}/job/data/mwfn/{job}'.format(host=HOST,job=job),
+        json={'name':name}
+    )
+    return json.loads(res.text)['data']
+
+def read_xtb_data(self,name,job):
+    res = requests.post('{host}/job/data/xtb/{job}'.format(host=HOST,job=job),
+        json={'name':name}
+    )
+    return json.loads(res.text)['data']

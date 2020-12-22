@@ -66,3 +66,4 @@ class CollapsibleBox(QWidget):
         content_animation.setDuration(400)
         content_animation.setStartValue(0)
         content_animation.setEndValue(content_height)
+
