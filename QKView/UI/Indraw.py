@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QDesktopWidget, QGridLayout, QPushButton
+from PyQt5.QtWidgets import QWidget, QDesktopWidget, QFormLayout, QPushButton, QDialogButtonBox
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QUrl, pyqtSignal, Qt
 from PyQt5.QtGui import QIcon, QPixmap
@@ -13,7 +13,7 @@ $.prototype.trigger = function(name){
 var _ = function(name){return document.querySelector(name) || {}}
 try{
     _('#structure-search').style = "display:none";
-    _('.scale-value-wrap').style = "display:none";
+    //_('.scale-value-wrap').style = "display:none";
     _('a[data-name="showLogo"]').style = "display:none";
     _('a[data-name="feedbackNew"]').style = "display:none";
     _('#action-mp-topbottom').style = "display:none";
@@ -21,15 +21,12 @@ try{
     _('#action-mp-acs').style = "display:none";
     _('#action-mp-nmr').style = "display:none";
     _('#action-mp-textSearch').style = "display:none";
-    _('#action-mp-zoomIn').style = "display:none";
-    _('#action-mp-zoomOut').style = "display:none";
+    //_('#action-mp-zoomIn').style = "display:none";
+    //_('#action-mp-zoomOut').style = "display:none";
     _('#action-mp-hint').style = "display:none";
     _('#action-mp-tlc').style = "display:none";
     _('#action-mp-svgtemplate-56').style = "display:none";
     //_('#action-mp-savefullpic').style = "display:none";
-    var dom = _('#action-mp-frag-cyclopropane')
-    dom.parentNode.removeChild(dom);
-    _('#action-mp-frag-cyclohexane').insertBefore(dom,_('.act-wrap #action-mp-frag-cyclohexane'))
 }catch(e){}
 '''
 
@@ -75,18 +72,18 @@ class Indraw(QWidget):
         self.isReady = True
 
     def renderWindow(self):
-        self.setGeometry(20, 20, 460, 440)
+        self.setGeometry(20, 20, 680, 480)
         size = self.geometry()
         screen = QDesktopWidget().screenGeometry()
         posX = (screen.width() - size.width()) // 2
         posY = (screen.height() - size.height()) // 2
         self.move(posX,posY)
-        self.setFixedSize(650, 500)
+        self.setFixedSize(680, 480)
         #标题
         self.setWindowTitle('Sketcher')
         self.setWindowIcon(QIcon(QPixmap('resource/benzene.png')))
         #布局
-        layout = QGridLayout()
+        layout = QFormLayout()
         self.setLayout(layout)
         self.webView = QWebEngineView()
         #self.webView.setFixedSize(400,400)
@@ -97,9 +94,10 @@ class Indraw(QWidget):
         self.webView.loadFinished.connect(lambda:self.execute(JS_forbidden))
         self.webView.loadFinished.connect(self.ready)
 
-        self.confirm = QPushButton(self.translate('Save'))
-        layout.addWidget(self.webView, 0, 0, 3, 3)
-        layout.addWidget(self.confirm, 3, 2, 1, 1)
+        self.confirm = QPushButton(self.tr('Save'))
+        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal,self)
+        layout.addRow(self.webView)
+        layout.addRow(self.buttonBox)
 
     def loadMolecule(self,mol):
         if self.isReady:
@@ -118,7 +116,8 @@ class Indraw(QWidget):
         def confirmEvent():
             self.setDisabled(True)
             self.execute(JS_getCurrentMol,updateMol)
-        self.confirm.clicked.connect(confirmEvent)
+        self.buttonBox.rejected.connect(self.close)
+        self.buttonBox.accepted.connect(confirmEvent)
 
     def execute(self,cmd,cb=None):
         if cb == None:
@@ -145,7 +144,7 @@ class Indraw(QWidget):
             self.parent.setDisabled(True)
         event.accept()
 
-    def translate(self,text):
+    def tr(self,text):
         if self.parent:
-            return self.parent.translate(text)
+            return self.parent.tr(text)
         return text

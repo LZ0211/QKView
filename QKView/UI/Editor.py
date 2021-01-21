@@ -50,7 +50,7 @@ class Searcher(QThread):
 class Editor(QWidget):
     finished = pyqtSignal(str,name='finished')
 
-    tags = ["碳酸酯","羧酸酯","磷酸酯","亚磷酸酯","硫酸酯","磺酸酯","硼酸酯","硅酸酯","醚类","醇类","酮类","胺类","腈类","氟代","芳香族","离子液体","阴离子","阳离子","溶剂","添加剂","成膜添加剂","负极添加剂","正极添加剂","阻燃剂","锂盐","钠盐","钾盐"]
+    tags = ["溶剂","添加剂","成膜添加剂","负极添加剂","正极添加剂","阻燃剂","除水剂","络合剂","环状","链状","碳酸酯","羧酸酯","磷酸酯","亚磷酸酯","硫酸酯","磺酸酯","亚硫酸酯","砜类","硼酸酯","硅酸酯","醚类","醇类","酮类","胺类","腈类","氟代","芳香族","离子液体","阴离子","阳离子","锂盐","钠盐","钾盐"]
 
     searcher = Searcher()
     
@@ -80,7 +80,7 @@ class Editor(QWidget):
         self.setFixedSize(360,500)
 
         #标题
-        self.setWindowTitle(self.translate('New Molecule'))
+        self.setWindowTitle(self.tr('New Molecule'))
         self.setWindowIcon(QIcon(QPixmap('resource/benzene.png')))
 
         formLayout = QGridLayout()
@@ -89,7 +89,7 @@ class Editor(QWidget):
         self.Structure = ImageLabel('')
         self.Structure.setScaledContents(True)
         self.Structure.clicked.connect(lambda :self.readMOL2D(self.MOL.toPlainText()))
-        formLayout.addWidget(QLabel(self.translate("Structure")), 0, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Structure")), 0, 0, 1, 3)
         formLayout.addWidget(self.Structure, 0, 3, 1, 7,alignment=Qt.AlignHCenter)
         #self.disPlayStructure(API.smi2png('c1ccccc1O'))
         #分子信息
@@ -113,34 +113,34 @@ class Editor(QWidget):
         self.MOL = QTextEdit()
         self.Image =  QLineEdit()
         #按钮
-        self.Search = QPushButton(QIcon("resource/Search.png"),self.translate('Search'),self)
+        self.Search = QPushButton(QIcon("resource/Search.png"),self.tr('Search'),self)
         self.PubChem = QPushButton(QIcon("resource/PubChem.png"),'',self)
         self.PubChem.setIconSize(QSize(54, 18))
-        self.Save = QPushButton(QIcon("resource/Save.png"),self.translate('Save'),self)
+        self.Save = QPushButton(QIcon("resource/Save.png"),self.tr('Save'),self)
         self.Search.clicked.connect(self.searchMolecule)
         self.Save.clicked.connect(self.saveMolecule)
         self.PubChem.clicked.connect(self.openPubChem)
         #formLayout.addWidget(QLabel(self.translate("UUID")), 0, 0, 1, 3)
         #formLayout.addWidget(self.UUID, 0, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("SMILES")), 1, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("SMILES")), 1, 0, 1, 3)
         formLayout.addWidget(self.SMILES, 1, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("CAS NO.")), 2, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("CAS NO.")), 2, 0, 1, 3)
         formLayout.addWidget(self.CAS, 2, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Chemical Name")), 3, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Chemical Name")), 3, 0, 1, 3)
         formLayout.addWidget(self.Name, 3, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Chemical Formular")), 4, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Chemical Formular")), 4, 0, 1, 3)
         formLayout.addWidget(self.Formular, 4, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Molecular Mass")), 5, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Molecular Mass")), 5, 0, 1, 3)
         formLayout.addWidget(self.Mass, 5, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Charge")), 6, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Charge")), 6, 0, 1, 3)
         formLayout.addWidget(self.Charge, 6, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Private Code")), 7, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Private Code")), 7, 0, 1, 3)
         formLayout.addWidget(self.Code, 7, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Alias")), 8, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Alias")), 8, 0, 1, 3)
         formLayout.addWidget(self.Alias, 8, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Property Labels")), 9, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Property Labels")), 9, 0, 1, 3)
         formLayout.addWidget(self.Tags, 9, 3, 1, 7)
-        formLayout.addWidget(QLabel(self.translate("Note")), 10, 0, 1, 3)
+        formLayout.addWidget(QLabel(self.tr("Note")), 10, 0, 1, 3)
         formLayout.addWidget(self.Note, 10, 3, 1, 7)
         formLayout.addWidget(self.Search, 11, 0, 1, 2)
         formLayout.addWidget(self.PubChem, 11, 4, 1, 2)
@@ -347,7 +347,7 @@ class Editor(QWidget):
             self.parent.setDisabled(True)
         event.accept()
 
-    def translate(self,text):
+    def tr(self,text):
         if self.parent:
-            return self.parent.translate(text)
+            return self.parent.tr(text)
         return text

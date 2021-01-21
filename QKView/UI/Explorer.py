@@ -7,7 +7,7 @@ class Explorer(QWidget):
 
     def __init__(self,root=""):
         super().__init__()
-        self.title = 'PyQt5 file system view'
+        #self.title = 'PyQt5 file system view'
         self.root = root
         self.left = 10
         self.top = 10
@@ -16,7 +16,7 @@ class Explorer(QWidget):
         self.initUI()
     
     def initUI(self):
-        self.setWindowTitle(self.title)
+        #self.setWindowTitle(self.title)
         self.setGeometry(self.left, self.top, self.width, self.height)
         
         self.model = QFileSystemModel()
@@ -32,7 +32,7 @@ class Explorer(QWidget):
         self.tree.setIndentation(20)
         self.tree.setSortingEnabled(True)
         
-        self.tree.setWindowTitle("Dir View")
+        #self.tree.setWindowTitle("Dir View")
         self.tree.resize(640, 480)
         
         windowLayout = QVBoxLayout()
@@ -105,5 +105,5 @@ void DirectoryViewer::remove()
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     dirname = os.path.dirname(os.path.abspath(__file__))
-    ex = Explorer(dirname)
+    ex = Explorer("ftp://172.16.11.164/61a505c2-69bb-3431-ab45-7497c13c6756/gauss/")
     sys.exit(app.exec_())

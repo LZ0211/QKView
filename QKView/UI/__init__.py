@@ -9,4 +9,5 @@ from .MainWindow import MainWindow
 from .Table import Table
 from .Browser import Browser
 from .QuestLine import QuestLine
+from .DataView import DataView
 from .QKView import QKView

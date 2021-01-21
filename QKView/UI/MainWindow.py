@@ -66,20 +66,20 @@ class MainWindow(QWidget):
 
     def prompt(self,text,msg='information'):
         if msg == 'critical':
-            return QMessageBox.critical(self,self.translate("Critical"),self.translate(text),QMessageBox.Yes | QMessageBox.No)
+            return QMessageBox.critical(self,self.tr("Critical"),self.tr(text),QMessageBox.Yes | QMessageBox.No)
         elif msg == 'warnning':
-            return QMessageBox.warning(self,self.translate("Warning"),self.translate(text),QMessageBox.Yes | QMessageBox.No)
+            return QMessageBox.warning(self,self.tr("Warning"),self.tr(text),QMessageBox.Yes | QMessageBox.No)
         else:
-            return QMessageBox.information(self,self.translate("Information"),self.translate(text),QMessageBox.Yes | QMessageBox.No)
+            return QMessageBox.information(self,self.tr("Information"),self.tr(text),QMessageBox.Yes | QMessageBox.No)
 
     def information(self,text):
-        return QMessageBox.information(self,self.translate("Information"),self.translate(text),QMessageBox.Yes)
+        return QMessageBox.information(self,self.tr("Information"),self.tr(text),QMessageBox.Yes)
         
     def critical(self,text):
-        return QMessageBox.critical(self,self.translate("Critical"),self.translate(text),QMessageBox.Yes)
+        return QMessageBox.critical(self,self.tr("Critical"),self.tr(text),QMessageBox.Yes)
 
     def warnning(self,text):
-        return QMessageBox.warning(self,self.translate("Warning"),self.translate(text),QMessageBox.Yes)
+        return QMessageBox.warning(self,self.tr("Warning"),self.tr(text),QMessageBox.Yes)
 
     def setSetting(self,key,value):
         self.settings.setValue(key,value)
@@ -95,7 +95,7 @@ class MainWindow(QWidget):
 
     def exportDataFile(self,data,ext="Text File (*.txt)"):
         (Name,Type) = QFileDialog.getSaveFileName(
-            self,self.translate("Save File"),
+            self,self.tr("Save File"),
             self.getSetting("File/lastFilePath",self.defaultDir),
             ext,ext
         )
@@ -109,9 +109,13 @@ class MainWindow(QWidget):
     def LangMenu(self):
         def changeLang(lang):
             def func():
+                if lang == self.getSetting("UI/Language","English"):
+                    return
                 self.setSetting('UI/Language',lang)
-                exe = sys.executable
-                os.execl(exe, exe, *sys.argv)
+                if self.warnning("Do you want to restart the program to implement language switch?"):
+                    self.tray.hide()
+                    exe = os.sys.argv[0]
+                    os.execl(exe, exe, *sys.argv[1:])
             return func
         menu = QMenu(self)
         for lang in self.languages:
@@ -140,7 +144,7 @@ class MainWindow(QWidget):
 
     def importDataFile(self,fn):
         (Name,Type) = QFileDialog.getOpenFileName(
-            self,self.translate('Open'),
+            self,self.tr('Open'),
             self.getSetting("File/lastFilePath",self.defaultDir),
             ";;".join(self.extensions),
             self.extensions[0]
@@ -156,7 +160,7 @@ class MainWindow(QWidget):
             self.critical('Invalid Data File!')
 
 
-    def translate(self,text):
+    def tr(self,text):
         if text in self.langText:
             return self.langText[text]
         return text
@@ -169,7 +173,7 @@ class MainWindow(QWidget):
             pass
 
     def translateUI(self):
-        _ = self.translate
+        _ = self.tr
         for name in self.allActions:
             self.getAction(name).setText(_(name))
         for name in self.allMenus:

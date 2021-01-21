@@ -1,7 +1,9 @@
 import os,sys
+#sys.path = ['','libs','libs/python.zip','libs/env']
+from PyQt5 import QtWebEngineWidgets, QtCore, QtSql
 from PyQt5.QtWidgets import QApplication, QSplashScreen
 from PyQt5.QtGui import QPixmap
-from libs.UI import QKView
+from QKView.UI import QKView
 
 if __name__ == '__main__':
     QApplication.setOrganizationName("ATL")

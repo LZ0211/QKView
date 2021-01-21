@@ -1,5 +1,5 @@
 import requests
-import json,base64,re,os,platform
+import json,base64,re,os,platform,urllib
 from urllib import parse
 from uuid import uuid3,uuid4
 from uuid import UUID
@@ -8,6 +8,7 @@ NAMESPACE = UUID('63e816118377ae5a4387d7b18820752a')
 reg_braket = re.compile(r'^\{\s*(\w+)\s*\}$')
 reg_double_braket = re.compile(r'^\{\{\s*(\S+)\s*\}\}$')
 
+FTP = 'ftp://172.16.11.164:21'
 HOST = 'http://172.16.11.164'
 PUBCHEM_HOST = 'https://pubchem.ncbi.nlm.nih.gov'
 
@@ -17,6 +18,7 @@ TIMEOUT = 5
 
 SketcherURL = HOST + "/static/sketcher/"
 IndrawURL = HOST + "/static/indraw/index.html"
+_3DViewURL = HOST + "/static/3dmol/"
 
 def mol2can(mol):
     url = HOST + '/job/submit/obabel/mol2can'
@@ -49,6 +51,12 @@ def mol2pdb(mol):
     pdb = json.loads(res.text)["data"]
     return pdb
 
+def mol2smi(mol):
+    url = HOST + 'job/submit/obabel/mol2can'
+    data = {"mol":mol}
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    return json.loads(res.text)["data"]
+
 def mol2png(mol):
     url = HOST + '/job/submit/obabel/mol2png'
     data = {'mol':mol}
@@ -79,8 +87,7 @@ def pdb2mol(pdb):
     data = {
         'inp': 'pdb',
         'out':'mol',
-        'data':pdb,
-        'other':'--gen3d'
+        'data':pdb
     }
     res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     mol = json.loads(res.text)["data"]
@@ -91,12 +98,17 @@ def pdb2xyz(pdb):
     data = {
         'inp': 'pdb',
         'out':'xyz',
-        'data':pdb,
-        'other':'--gen3d'
+        'data':pdb
     }
     res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     xyz = json.loads(res.text)["data"]
     return xyz
+
+def pdb2smi(pdb):
+    url = HOST + 'job/submit/obabel/pdb2can'
+    data = {"pdb":pdb}
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    return json.loads(res.text)["data"]
 
 def pdb2png(pdb):
     url = HOST + '/job/submit/obabel/pdb2png'
@@ -128,8 +140,7 @@ def xyz2mol(xyz):
     data = {
         'inp': 'xyz',
         'out':'mol',
-        'data':xyz,
-        'other':'--gen3d'
+        'data':xyz
     }
     res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     mol = json.loads(res.text)["data"]
@@ -140,12 +151,17 @@ def xyz2pdb(xyz):
     data = {
         'inp': 'xyz',
         'out':'pdb',
-        'data':xyz,
-        'other':'--gen3d'
+        'data':xyz
     }
     res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
     pdb = json.loads(res.text)["data"]
     return pdb
+
+def xyz2smi(xyz):
+    url = HOST + 'job/submit/obabel/xyz2can'
+    data = {"xyz":xyz}
+    res = requests.post(url,json=data,headers=JSON_HEADERS, timeout=TIMEOUT)
+    return json.loads(res.text)["data"]
 
 def xyz2png(xyz):
     url = HOST + '/job/submit/obabel/xyz2png'
@@ -436,6 +452,34 @@ def hashReplace(hash,dict):
             del hash[key]
             hash[dict[key]] = val
     return hash
+validFiles = ["log","out","gjf","fchk","chg","txt","bo","cube","cub","wfn","pdb","xyz","mol"]
+invalidFiles = ["Fukui.fchk"]
+def getFiles(uuid):
+    res = requests.get('{host}/files/{uuid}/gauss'.format(host=HOST,uuid=uuid))
+    text = res.text
+    array = text.strip().split("\n")
+    files = []
+    for line in array:
+        arr = line.split()
+        if arr[0] == "<a":
+            filename = re.match(r'href="(.*)?"',arr[1]).group(1)
+            filename = urllib.parse.unquote(filename)
+            time = arr[2] + " " +arr[3]
+            size = arr[4]
+            if filename.split(".")[-1].lower() in validFiles and not filename in invalidFiles:
+                files.append([filename,time,size])
+    return files
+
+def downloadFile(uuid,file):
+    dir = os.path.dirname(file)
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    res = requests.get("{host}/files/{uuid}/gauss/{file}".format(host=HOST,uuid=uuid,file=os.path.basename(file)))
+    f = open(file,'wb+')
+    f.write(res.content)
+    f.close()
+
+#print(getFiles("28895e8a-02ab-3149-a3e6-78d0b4dd304f"))
 
 def read_job_status(id):
     res = requests.get('{host}/job/status?id={id}'.format(host=HOST,id=id))
@@ -474,8 +518,31 @@ def read_mwfn_data(name,job):
     )
     return json.loads(res.text)['data']
 
-def read_xtb_data(self,name,job):
+def read_xtb_data(name,job):
     res = requests.post('{host}/job/data/xtb/{job}'.format(host=HOST,job=job),
         json={'name':name}
     )
     return json.loads(res.text)['data']
+
+
+def geom2xyz(geom):
+    xyz = '%s\nOptimized Molecule Structure\n' % len(geom)
+    for line in geom:
+        xyz += " {symbol:>2s} {x:>-15.8f} {y:>-15.8f} {z:>-15.8f}\n".format(symbol=line[0],x=line[1],y=line[2],z=line[3])
+    return xyz
+
+ENERGY_Hartree = 1.00
+ENERGY_eV = 27.211399
+ENERGY_kJ = 2625.5002
+ENERGY_kcal = 627.5096
+ENERGY_cm = 219474.63
+ENERGY_V = 2625.5002/96484.6
+
+
+# data = read_mwfn_data("5e74c28a-11fa-3ae4-b78b-1a9f23b2f033","gauss_surface")
+# print(data)
+# data = read_mwfn_data("fe5730aa-a27a-363f-9d0c-56123eca9e25",job="gauss_fukui")
+# print(data)
+# print(data[0]["Oribit"][0][-1]*ENERGY_eV)
+
+#print(read_mwfn_data("d5e9a42c-3fc1-39a7-a4a0-e1154d123fdb","gauss_surface"))

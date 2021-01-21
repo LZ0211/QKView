@@ -1,5 +1,4 @@
-from PyQt5 import QtSql
-from PyQt5.QtSql import QSqlQuery
+from PyQt5.QtSql import QSqlQuery,QSqlDatabase
 from time import time
 
 def like_compile(str,cols):
@@ -12,7 +11,7 @@ def like_compile(str,cols):
     str = str.replace("_", "\\_")
     str = str.replace("(", "\\(")
     str = str.replace(")", "\\)")
-    return ' OR '.join(map(lambda col:col+" LIKE '%{str}%'".format(str=str),cols))
+    return ' OR '.join(list(map(lambda col:col+" LIKE '%{str}%'".format(str=str),cols)))
 
 class MoleculeDataBase(object):
     index_conflict_scheme = "IGNORE"# REPLACE IGNORE FAIL ABORT ROLLBACK
@@ -39,21 +38,28 @@ class MoleculeDataBase(object):
     index_cols_update = ['formular', 'cas', 'name', 'code', 'alias', 'tags', 'image', 'note', 'mol', 'xyz', 'date_modify']
     index_cols_query = ['uuid', 'smiles', 'formular', 'mass', 'charge', 'cas', 'name', 'code', 'alias', 'tags', 'image', 'note', 'mol', 'xyz', 'date_add', 'date_modify']
 
+    conflict_scheme = "REPLACE"# REPLACE IGNORE FAIL ABORT ROLLBACK
+
     summary_table = '''CREATE TABLE IF NOT EXISTS summary
 (
     uuid CHARACTER(36) PRIMARY KEY UNIQUE,
     geometry TEXT,
     charge INTEGER,
     spin INTEGER,
+    point_group VARCHAR(8),
+    dipole_X REAL,
+    dipole_Y REAL,
+    dipole_Z REAL,
+    dipole REAL,
     homo REAL,
     lumo REAL,
-    hf REAL,
+    energy REAL,
     cor_zpe REAL,
     cor_energy REAL,
     cor_enthalpy REAL,
     cor_gibbs REAL
 )'''
-    summary_cols = ['uuid','geometry','charge','spin','homo','lumo','hf','cor_zpe','cor_energy','cor_enthalpy','cor_gibbs']
+    summary_cols = ['uuid','geometry','charge','spin','point_group','dipole_X','dipole_Y','dipole_Z','dipole','homo','lumo','energy','cor_zpe','cor_energy','cor_enthalpy','cor_gibbs']
 
     spectrum_table = '''CREATE TABLE IF NOT EXISTS spectrum
 (
@@ -87,16 +93,6 @@ class MoleculeDataBase(object):
     fuzzy TEXT
 )'''
     bo_cols = ['uuid','mulliken','mayer','laplacian','fuzzy']
-
-    summery_table = '''CREATE TABLE IF NOT EXISTS qc_summary
-(
-    uuid CHARACTER(36) PRIMARY KEY UNIQUE,
-    mulliken TEXT,
-    mayer TEXT,
-    laplacian TEXT,
-    fuzzy TEXT
-)
-'''
 
     surface_table = '''CREATE TABLE IF NOT EXISTS surface
 (
@@ -142,7 +138,7 @@ class MoleculeDataBase(object):
     condensed_nucle_index TEXT,
     condensed_softness TEXT
 )'''
-    cdft_cols = ['uuid','vertical_ip','vertical_ea','electro_negativity','chemical_potential','softnes','hardness','electr_index','nucle_index','f_plus','f_minus','f_zero','cdd','condensed_electr_index','condensed_nucle_index','condensed_softness']
+    cdft_cols = ['uuid','vertical_ip','vertical_ea','electro_negativity','chemical_potential','softness','hardness','electr_index','nucle_index','f_plus','f_minus','f_zero','cdd','condensed_electr_index','condensed_nucle_index','condensed_softness']
 
     physic_table = '''CREATE TABLE IF NOT EXISTS physical_prop
 (
@@ -150,26 +146,69 @@ class MoleculeDataBase(object):
     density REAL,
     melting REAL,
     boiling REAL,
+    refractive REAL,
     vapor REAL,
-    vapor_temp REAL,
+    vapor_temp_lower REAL,
+    vapor_temp_upper REAL,
+    vapor_const_A REAL,
+    vapor_const_B REAL,
+    vapor_const_C REAL,
     dielectric REAL,
     flash REAL,
+    ignition REAL,
     viscosity REAL,
     vis_temp REAL,
-    vis_const_1 REAL,
-    vis_const_2 REAL,
-    vis_const_3 REAL,
-    surf_tension REAL,
+    vis_temp_ka REAL,
+    vis_temp_kb REAL,
+    vis_temp_kc REAL,
+    vis_temp_kd REAL,
+    surf_tension_a REAL,
+    surf_tension_b REAL,
+    ionization REAL,
+    pK1 REAL,
+    pK2 REAL,
+    pK3 REAL,
+    pK4 REAL,
     re_potential REAL,
     ox_potential REAL
 )'''
     physic_cols = ['uuid','density','melting','boiling','vapor','vapor_temp','dielectric','flash','viscosity','vis_temp','vis_const_1','vis_const_2','vis_const_3','surf_tension','re_potential','ox_potential']
 
+    binding_table = '''CREATE TABLE IF NOT EXISTS binding
+(
+    uuid CHARACTER(36) PRIMARY KEY UNIQUE,
+    H REAL,
+    Li REAL,
+    Na REAL,
+    K REAL,
+    Mg REAL,
+    Al REAL,
+    Cu REAL,
+    Zn REAL,
+    Co REAL,
+    Fe2 REAL,
+    Fe3 REAL,
+    Ni REAL,
+    Mn REAL,
+    Ca REAL,
+    F REAL,
+    Cl REAL,
+    Br REAL,
+    I REAL
+)'''
+
     def __init__(self):
-        self.db = QtSql.QSqlDatabase.addDatabase('QSQLITE')
+        self.db = QSqlDatabase.addDatabase('QSQLITE')
         self.db.setDatabaseName('molecule.db')
         self.db.open()
         self.index_init()
+        self.summary_init()
+        self.charge_init()
+        self.bo_init()
+        self.surface_init()
+        self.cdft_init()
+        self.spectrum_init()
+        self.physic_init()
 
     def query_sql(self,sql):
         res = []
@@ -209,18 +248,14 @@ class MoleculeDataBase(object):
     def index_update(self,molecule):
         if molecule == None:
             return False
+        keys = list(molecule.keys())
+        key_val = ', '.join(list(map(lambda k:'%s=:%s' % (k,k),keys)))
+        sql_code = "UPDATE molecule_index SET {key_val} WHERE uuid=:uuid;".format(key_val = key_val)
         q = QSqlQuery()
-        molecule['date_modify'] = time()
-        sql_code = "UPDATE molecule_index SET {key_val} WHERE uuid=:uuid".format(
-            key_val = ', '.join(map(lambda k:'%s=:%s' % (k,k),self.index_cols_update))
-        )
         q.prepare(sql_code)
-        q.bindValue(":uuid",molecule["uuid"])
-        for key in self.index_cols_update:
-            val = molecule[key]
-            if isinstance(val,str) and val == "":
-                continue
-            q.bindValue(":%s" % key, val)
+        
+        for key in keys:
+            q.bindValue(":%s" % key, molecule[key])
         q.exec_()
 
     def index_del(self,uuid):
@@ -278,7 +313,7 @@ class MoleculeDataBase(object):
             return self.index_query_all()
         if cols == None:
             cols = ['name','formular','cas','code','alias','note','tags']
-        rule = ') AND ('.join(map(lambda key:like_compile(key,cols),keys))
+        rule = ') AND ('.join(list(map(lambda key:like_compile(key,cols),keys)))
         sql_code = "SELECT * FROM molecule_index WHERE ({rule})".format(rule=rule)
         return self.query_sql(sql_code)
 
@@ -304,10 +339,11 @@ class MoleculeDataBase(object):
         return self.index_search(str,['cas'])
 
     def general_add(self,table,info):
-        if table == None or info == None:
+        if table == None or info == None or not "uuid" in info:
             return
         keys = list(info.keys())
-        sql_code = "INSERT OR REPLACE INTO {table} ({keys}) VALUES (:{values});".format(
+        sql_code = "INSERT OR {scheme} INTO {table} ({keys}) VALUES (:{values});".format(
+            scheme = self.conflict_scheme,
             table = table,
             keys = ', '.join(keys),
             values = ', :'.join(keys)
@@ -316,21 +352,32 @@ class MoleculeDataBase(object):
         q.prepare(sql_code)
         for key in keys:
             q.bindValue(":%s" % key, info[key])
-        q.exec_()
+        r = q.exec_()
 
     def general_update(self,table,info):
         if table == None or info == None:
             return
+        if not "uuid" in info:
+            return
         keys = list(info.keys())
         sql_code = "UPDATE {table} SET {key_val} WHERE uuid=:uuid;".format(
             table = table,
-            key_val = ', '.join(map(lambda k:'%s=:%s' % (key,key),keys))
+            key_val = ', '.join(list(map(lambda k:'%s=:%s' % (k,k),keys)))
         )
         q = QSqlQuery()
         q.prepare(sql_code)
         for key in keys:
             q.bindValue(":%s" % key, info[key])
         q.exec_()
+
+    def general_update_insert(self,table,info):
+        if table == None or info == None or not "uuid" in info:
+            return
+        found = self.general_query(table,info['uuid'])
+        if len(found) == 0:
+            self.general_add(table,info)
+        else:
+            self.general_update(table,info)
 
     def general_del(self,table,uuid):
         if table == None or uuid == None:
@@ -345,7 +392,7 @@ class MoleculeDataBase(object):
     def general_query(self,table,uuid):
         if table == None or uuid == None:
             return []
-        sql_code = "SELECT FROM {table} WHERE uuid='{uuid}'".format(
+        sql_code = "SELECT * FROM {table} WHERE uuid='{uuid}'".format(
             table = table,
             uuid = uuid
         )
@@ -365,7 +412,142 @@ class MoleculeDataBase(object):
         return self.general_del('summary',uuid)
 
     def summary_query(self,uuid):
-        pass
+        return self.general_query('summary',uuid)
+
+    def summary_update_insert(self,info):
+        return self.general_update_insert('summary',info)
 
     def charge_init(self):
-        pass
+        q = QSqlQuery()
+        q.exec_(self.charge_table)
+
+    def charge_add(self,info):
+        return self.general_add('atomic_charge',info)
+
+    def charge_update(self,info):
+        return self.general_update('atomic_charge',info)
+
+    def charge_del(self,uuid):
+        return self.general_del('atomic_charge',uuid)
+
+    def charge_query(self,uuid):
+        return self.general_query('atomic_charge',uuid)
+
+    def charge_update_insert(self,info):
+        return self.general_update_insert('atomic_charge',info)
+
+    def bo_init(self):
+        q = QSqlQuery()
+        q.exec_(self.bo_table)
+
+    def bo_add(self,info):
+        return self.general_add('bond_order',info)
+
+    def bo_update(self,info):
+        return self.general_update('bond_order',info)
+
+    def bo_del(self,uuid):
+        return self.general_del('bond_order',uuid)
+
+    def bo_query(self,uuid):
+        return self.general_query('bond_order',uuid)
+
+    def bo_update_insert(self,info):
+        return self.general_update_insert('bond_order',info)
+
+    def surface_init(self):
+        q = QSqlQuery()
+        q.exec_(self.surface_table)
+
+    def surface_add(self,info):
+        return self.general_add('surface',info)
+
+    def surface_update(self,info):
+        return self.general_update('surface',info)
+
+    def surface_del(self,uuid):
+        return self.general_del('surface',uuid)
+
+    def surface_query(self,uuid):
+        return self.general_query('surface',uuid)
+
+    def surface_update_insert(self,info):
+        return self.general_update_insert('surface',info)
+
+    def cdft_init(self):
+        q = QSqlQuery()
+        q.exec_(self.cdft_table)
+
+    def cdft_add(self,info):
+        return self.general_add('conceptual_dft',info)
+
+    def cdft_update(self,info):
+        return self.general_update('conceptual_dft',info)
+
+    def cdft_del(self,uuid):
+        return self.general_del('conceptual_dft',uuid)
+
+    def cdft_query(self,uuid):
+        return self.general_query('conceptual_dft',uuid)
+
+    def cdft_update_insert(self,info):
+        return self.general_update_insert('conceptual_dft',info)
+
+    def physic_init(self):
+        q = QSqlQuery()
+        q.exec_(self.physic_table)
+
+    def physic_add(self,info):
+        return self.general_add('physical_prop',info)
+
+    def physic_update(self,info):
+        return self.general_update('physical_prop',info)
+
+    def physic_del(self,uuid):
+        return self.general_del('physical_prop',uuid)
+
+    def physic_query(self,uuid):
+        return self.general_query('physical_prop',uuid)
+
+    def physic_update_insert(self,info):
+        return self.general_update_insert('physical_prop',info)
+
+    def spectrum_init(self):
+        q = QSqlQuery()
+        q.exec_(self.spectrum_table)
+
+    def spectrum_add(self,info):
+        return self.general_add('spectrum',info)
+
+    def spectrum_update(self,info):
+        return self.general_update('spectrum',info)
+
+    def spectrum_del(self,uuid):
+        return self.general_del('spectrum',uuid)
+
+    def spectrum_query(self,uuid):
+        return self.general_query('spectrum',uuid)
+
+    def spectrum_update_insert(self,info):
+        return self.general_update_insert('spectrum',info)
+
+    def binding_init(self):
+        q = QSqlQuery()
+        q.exec_(self.binding_table)
+
+    def binding_add(self,info):
+        return self.general_add('binding',info)
+
+    def binding_update(self,info):
+        return self.general_update('binding',info)
+
+    def binding_del(self,uuid):
+        return self.general_del('binding',uuid)
+
+    def binding_query(self,uuid):
+        return self.general_query('binding',uuid)
+
+    def binding_update_insert(self,info):
+        return self.general_update_insert('binding',info)
+
+    

@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QWidget,QTableView,QAbstractItemView,QComboBox,QLineEdit,QPushButton,QHBoxLayout,QVBoxLayout,QLabel,QStyledItemDelegate
-from PyQt5.QtGui import QPixmap,QImage,QPainter,QStandardItemModel,QStandardItem
+from PyQt5.QtGui import QPixmap,QImage,QPainter,QStandardItemModel,QStandardItem,QIcon
 from ..Core import API
 
 
@@ -37,7 +37,9 @@ class Table(QWidget):
         self.sortId = -1
         self.cols = cols
         self.colsNum = len(cols)
-        self.header = header
+        self.header = []
+        for char in header:
+            self.header.append(self.tr(char))
         for i in range(len(header),self.colsNum):
             self.header.append(cols[i])
 
@@ -96,12 +98,12 @@ class Table(QWidget):
         self.searchField.addItem('All')
         self.searchField.addItems(list(filter(lambda x:x in cols,['uuid','cas','name','formular','alias','code','tags','note'])))
         self.searchText = QLineEdit(self)
-        self.searchBtn = QPushButton(self.translate("Search"))
+        self.searchBtn = QPushButton(QIcon("resource/Search.png"),self.tr("Search"))
         barLayout = QHBoxLayout()
         barLayout.setContentsMargins(0, 0, 0, 5)
-        barLayout.addWidget(QLabel(self.translate("Search Method")))
+        barLayout.addWidget(QLabel(self.tr("Search Method")))
         barLayout.addWidget(self.searchType)
-        barLayout.addWidget(QLabel(self.translate("Search Field")))
+        barLayout.addWidget(QLabel(self.tr("Search Field")))
         barLayout.addWidget(self.searchField)
         barLayout.addWidget(self.searchText)
         barLayout.addWidget(self.searchBtn)
@@ -139,8 +141,8 @@ class Table(QWidget):
             else:
                 self.model.sort(self.sortId, Qt.AscendingOrder)
 
-    def translate(self,text):
+    def tr(self,text):
         if self.parent:
-            return self.parent.translate(text)
+            return self.parent.tr(text)
         return text
 

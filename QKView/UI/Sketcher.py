@@ -58,7 +58,7 @@ class Sketcher(QWidget):
         self.webView.show()
         self.webView.loadFinished.connect(self.ready)
 
-        self.confirm = QPushButton(self.translate('Save'))
+        self.confirm = QPushButton(self.tr('Save'))
         layout.addWidget(self.webView, 0, 0, 3, 3)
         layout.addWidget(self.confirm, 3, 2, 1, 1)
 
@@ -104,7 +104,7 @@ class Sketcher(QWidget):
             self.parent.setDisabled(True)
         event.accept()
 
-    def translate(self,text):
+    def tr(self,text):
         if self.parent:
-            return self.parent.translate(text)
+            return self.parent.tr(text)
         return text

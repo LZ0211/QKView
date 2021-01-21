@@ -2,10 +2,12 @@ import os,sys
 from PyQt5.QtWidgets import QWidget, QApplication, QDesktopWidget, QListWidgetItem, QTreeWidgetItem, QSplitter, QHBoxLayout, QVBoxLayout, QGridLayout, QGroupBox, QPushButton, QSplashScreen, QToolBar, QMainWindow, QSystemTrayIcon, QStatusBar, QToolBar, QMenuBar, QMenu, QAction,QStyleFactory,QFileDialog,QMessageBox
 from PyQt5.QtCore import QUrl, pyqtSignal, QSize, Qt, QSettings
 from PyQt5.QtGui import QIcon, QColor, QPixmap,QCursor
-from . import Sketcher, Indraw, Editor, MainWindow, Table, Browser, QuestLine
-from ..Core import API,SQL
+from . import Sketcher, Indraw, Editor, MainWindow, Table, Browser, QuestLine,DataView
+from ..Core import API
 from ..Core.SQL import MoleculeDataBase
-import json,time
+from ..Core.Project import Project
+import json,time,subprocess
+from tempfile import mktemp
 
 class QKView(QMainWindow,MainWindow):
 
@@ -77,18 +79,36 @@ class QKView(QMainWindow,MainWindow):
                     ('ORCA','ORCA.png'),
                     ('Multiwfn','Multiwfn.png')
                 ]
+            },
+            {
+                "name":"QSPR Model",
+                "actions":[
+                    ('Crystal Density'),
+                    ('Vapor Enthalpy'),
+                    ('Sublime Enthalpy'),
+                    ('Boiling Point'),
+                    ('Melting Point'),
+                    ('Flash Point'),
+                    ('Solvation Free Energy'),
+                    ('Surface Tension'),
+                    ('Viscosity')
+                ]
             }
         ]
     }
 
-    ToolBar = ["Import","Draw","|","Edit","Delete","Copy","Add To Queue","|","Data Source","Data Download"]
+    ToolBar = ["Import","Draw","|","Edit","Delete","Copy","Add To Queue","|","Data Source","GaussView","VESTA","VMD"]
 
     def __init__(self,dirname):
         super(QKView, self).__init__(dirname)
         #MainWindow.__init__(self,dirname)
+        self.calculator = Project(self)
         self.db = MoleculeDataBase()
         self.browser = Browser(self)
-        self.browser.setWindowFlags(Qt.WindowStaysOnTopHint)
+        #self.browser.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.view = DataView(self.tr("DataView"),self)
+        self.view.setHidden(True)
+        self.addDockWidget(Qt.RightDockWidgetArea,self.view)
         self.renderWindow()
         self.translateUI()
         self.show()
@@ -97,6 +117,7 @@ class QKView(QMainWindow,MainWindow):
         self.bindActionEvents()
         self.bindTableEvents()
         self.loadDataBase()
+        self.configCalculator()
         #self.browser.open('http://172.16.11.164/static/indraw/')
 
     def renderWindow(self):
@@ -110,9 +131,9 @@ class QKView(QMainWindow,MainWindow):
         self.setWindowTitle('Quantum Chemistry Viewer')
         self.setWindowIcon(QIcon(QPixmap('resource/icon.png')))
         #导航栏
-        self.navigation = QToolBar('Navigation')
-        self.navigation.setIconSize(QSize(16, 16))
-        self.addToolBar(self.navigation)
+        # self.navigation = QToolBar('Navigation')
+        # self.navigation.setIconSize(QSize(16, 16))
+        # self.addToolBar(self.navigation)
         #菜单栏
         self.menuBar = QMenuBar()
         self.setMenuBar(self.menuBar)
@@ -132,7 +153,7 @@ class QKView(QMainWindow,MainWindow):
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
         #工具栏
-        self.toolBar = QToolBar()
+        self.toolBar = QToolBar(self.tr("ToolBar"),self)
         self.addToolBar(Qt.LeftToolBarArea, self.toolBar)
         self.setBarActions(self.toolBar,self.ToolBar)
         #系统托盘
@@ -144,11 +165,12 @@ class QKView(QMainWindow,MainWindow):
         ])
         self.tray.setContextMenu(self.trayMenu)
         self.tray.show()
-        #布局
+        #任务
         self.quest = QuestLine(self)
+        #表格
         self.table = Table(self,
             cols = ['uuid','image','smiles','cas','name','formular','mass','alias','code','tags'],
-            header = ['ID','分子结构','SMI','CAS号','化学名称','分子式','分子量','简称','代号','标签']
+            header = ['ID','2D Structure','smiles','CAS NO.','Chemical Name','Chemical Formular','Molecular Mass','Alias','Private Code','Property Labels']
         )
         layout = QHBoxLayout()
         layout.addWidget(self.quest)
@@ -156,6 +178,7 @@ class QKView(QMainWindow,MainWindow):
         centralWidget = QWidget()
         centralWidget.setLayout(layout)
         self.setCentralWidget(centralWidget)
+        self.testSql()
 
     def bindActionEvents(self):
         #事件槽
@@ -166,6 +189,15 @@ class QKView(QMainWindow,MainWindow):
         )
         self.getAction("Draw").triggered.connect(lambda :self.editMolecule())
         self.getAction("Exit").triggered.connect(self.close)
+        self.getAction("GaussView").triggered.connect(self.interfaceGaussView)
+        self.getAction("VESTA").triggered.connect(self.interfaceGaussVESTA)
+        self.getAction("VMD").triggered.connect(self.interfaceGaussVMD)
+        self.getAction('pdb').triggered.connect(self.pdbAction)
+        self.getAction('mol').triggered.connect(self.molAction)
+        self.getAction('xyz').triggered.connect(self.xyzAction)
+        self.getAction('Edit').triggered.connect(self.editAction)
+        self.getAction('Copy').triggered.connect(self.copyAction)
+        self.getAction('Delete').triggered.connect(self.deleteAction)
 
     def bindTableEvents(self):
         def showTableMenu():
@@ -181,79 +213,23 @@ class QKView(QMainWindow,MainWindow):
             self.table.tableView.contextMenu.popup(QCursor.pos())
             self.table.tableView.contextMenu.show()
 
-        def exportPDB():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            smi = self.table.model.item(row,2).text()
-            self.exportDataFile(lambda :API.smi2pdb(smi),"PDB File (*.pdb)")
-
-        def exportMOL():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            smi = self.table.model.item(row,2).text()
-            self.exportDataFile(lambda :API.smi2mol(smi),"MOL File (*.mol)")
-            pass
-
-        def exportXYZ():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            smi = self.table.model.item(row,2).text()
-            self.exportDataFile(lambda :API.smi2xyz(smi),"XYZ File (*.xyz)")
-            pass
-
-        def edit():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            uuid = self.table.model.item(row,0).text()
-            data = self.db.index_query_id(uuid)
-            if len(data) == 1:
-                self.editor.initForm(data[0])
-                self.editor.finished.connect(update)
-                self.editor.show()
-
-        def copy():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            uuid = self.table.model.item(row,0).text()
-            data = self.db.index_query_id(uuid)
-            if len(data) == 1:
-                dat = data[0]["mol"]
-                if dat != "":
-                    self.editMolecule(dat,type="mol")
-
-        def update(string):
-            molecule = json.loads(string)
-            self.db.index_update(molecule)
-            self.table.loadDatas(self.db.index_query_all())
-
-        def delete():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            if self.prompt("Confirmed to delete?",msg='warnning') == QMessageBox.No:
-                return
-            uuid = self.table.model.item(row,0).text()
-            self.db.index_del(uuid)
-            self.table.loadDatas(self.db.index_query_all())
-
         def source():
             row = self.table.tableView.currentIndex().row()
             if row < 0:
                 return
             uuid = self.table.model.item(row,0).text()
-            self.browser.open(QUrl("{host}/files/{uuid}/".format(host=API.HOST,uuid=uuid)))
-            self.browser.show()
+            path = "{host}/{uuid}/".format(host=API.FTP,uuid=uuid)
+            subprocess.Popen(["explorer.exe",path])
+            #os.startfile()
+            #self.browser.open(QUrl("ftp://{host}/{uuid}/".format(host=API.HOST,uuid=uuid)))
+            #self.browser.show()
 
         def queue():
             row = self.table.tableView.currentIndex().row()
             if row < 0:
                 return
             uuid = self.table.model.item(row,0).text()
+            data = self.db.index_query_id(uuid)[0]
             count = self.quest.list.topLevelItemCount()
             for i in range(count):
                 if self.quest.list.topLevelItem(i).text(0) == uuid:
@@ -261,11 +237,7 @@ class QKView(QMainWindow,MainWindow):
             item = QTreeWidgetItem(self.quest.list)
             item.setText(0,uuid)
             self.quest.list.insertTopLevelItem(count,item)
-
-        def clear():
-            count = self.quest.list.topLevelItemCount()
-            for i in range(count):
-                self.quest.list.takeTopLevelItem(count-i-1)
+            self.calculator.add_queue(data)
 
         def search():
             text = self.table.searchText.text()
@@ -283,27 +255,86 @@ class QKView(QMainWindow,MainWindow):
                 data = self.db.index_query(keys,text)
                 self.table.loadDatas(data)
 
-        def start():
+        def terminal():
+            self.quest.startBtn.setEnabled(True)
+            self.quest.clearBtn.setEnabled(True)
+
+        def clearJobs():
+            count = self.quest.list.topLevelItemCount()
+            for i in range(count):
+                self.quest.list.takeTopLevelItem(count-i-1)
+            self.quest.processBar.setValue(0)
+            self.calculator.clear()
+
+        def startJobs():
+            self.quest.startBtn.setDisabled(True)
+            self.quest.clearBtn.setDisabled(True)
+            self.calculator.isEnd = False
+            self.calculator.interval = int(self.getSetting("Calculator/Interval",10))
+            self.calculator.start()
             pass
 
-        def stop():
+        def stopJobs():
+            self.calculator.end()
             pass
+
+        def showDataView():
+            row = self.table.tableView.currentIndex().row()
+            if row < 0:
+                return
+            uuid = self.table.model.item(row,0).text()
+            if self.view.uuid == uuid and self.view.isVisible():
+                return
+            self.view.setId(uuid)
+            self.view.setVisible(True)
+
+        def swicthDataView(*argv):
+            if self.view.isHidden():
+                return
+            row = self.table.tableView.currentIndex().row()
+            if row < 0:
+                return
+            uuid = self.table.model.item(row,0).text()
+            if self.view.uuid == uuid:
+                return
+            self.view.setId(uuid)
+
+        def updateJobs():
+            if self.calculator.isEnd:
+                self.calculator.finish = []
+                self.calculator.processed.emit(0)
+            self.calculator.set_text_jobs(self.quest.valueList())
 
         self.table.tableView.setColumnHidden(0,True)
         self.table.tableView.customContextMenuRequested.connect(showTableMenu)
-        self.getAction('Edit').triggered.connect(edit)
-        self.getAction('Copy').triggered.connect(copy)
-        self.getAction('Delete').triggered.connect(delete)
+        self.table.tableView.doubleClicked.connect(showDataView)
+        #self.table.tableView.clicked.connect(swicthDataView)
+        self.table.tableView.selectionModel().selectionChanged.connect(swicthDataView)
+        
         self.getAction('Add To Queue').triggered.connect(queue)
         self.getAction("Data Source").triggered.connect(source)
-        self.getAction('pdb').triggered.connect(exportPDB)
-        self.getAction('mol').triggered.connect(exportMOL)
-        self.getAction('xyz').triggered.connect(exportXYZ)
         self.table.searchBtn.clicked.connect(search)
         self.table.searchText.returnPressed.connect(search)
-        self.quest.startBtn.clicked.connect(start)
-        self.quest.stopBtn.clicked.connect(stop)
-        self.quest.clearBtn.clicked.connect(clear)
+        self.quest.model.itemChanged.connect(updateJobs)
+        self.quest.startBtn.clicked.connect(startJobs)
+        self.quest.stopBtn.clicked.connect(stopJobs)
+        self.quest.clearBtn.clicked.connect(clearJobs)
+        self.calculator.processed.connect(self.quest.processBar.setValue)
+        self.calculator.terminal.connect(terminal)
+
+        #未实现的功能不允许选择
+        texts = self.quest.Quests
+        invalid = []
+        for group in texts:
+            all = True
+            for sub in group['next']:
+                if Project.selectText(sub['text']) == None:
+                    invalid.append(sub['text'])
+                else:
+                    all = False
+            if all:
+                invalid.append(group['text'])
+        self.quest.setDisableList(invalid)
         pass
 
     def editMolecule(self,input="",type="smi"):
@@ -335,13 +366,122 @@ class QKView(QMainWindow,MainWindow):
             return self.editor.readSMI(input)
         pass
     
+    def interfaceGaussView(self):
+        GaussView = self.getSetting("Interface/GaussView","")
+        file = self.tempFile()
+        if GaussView == "" or file == None:
+            return
+        subprocess.Popen([GaussView, file],shell=True)
+
+    def interfaceGaussVESTA(self):
+        VESTA = self.getSetting("Interface/VESTA","")
+        file = self.tempFile()
+        if VESTA == "" or file == None:
+            return
+        subprocess.Popen([VESTA, file],shell=True)
+
+    def interfaceGaussVMD(self):
+        VMD = self.getSetting("Interface/VMD","")
+        file = self.tempFile()
+        if VMD == "" or file == None:
+            return
+        subprocess.Popen([VMD, file],shell=True)
+
+    def tempFile(self,format=".pdb"):
+        format = format.lower()
+        row = self.table.tableView.currentIndex().row()
+        if row < 0:
+            return
+        uuid = self.table.model.item(row,0).text()
+        data = self.db.index_query_id(uuid)
+        if len(data) == 1:
+            info = data[0]
+            xyz = info['xyz']
+            if xyz == "":
+                return
+            if format == ".pdb":
+                string = API.xyz2pdb(xyz)
+            elif format == ".mol":
+                string = API.xyz2mol(xyz)
+            else:
+                format = ".xyz"
+                string = xyz
+            tempdir = self.getSetting('File/TempDirectory','')
+            if tempdir == '':
+                tempfile = mktemp() + format
+            else:
+                tempfile = os.path.join(tempdir,uuid + format)
+            open(tempfile,"w+").write(string)
+            return tempfile
+        return
+
     def testSql(self):
         #print(self.db.index_search('碳酸酯 溶剂'))
+        #self.calculator.add
+        #self.calculator.("9fb05581-bd1b-3cfe-929a-75a14a4c4568")
         pass
 
     def loadDataBase(self):
         self.table.loadDatas(self.db.index_query_all())
         self.activateActions(['Edit','Delete'])
+
+    #配置计算参数
+    def configCalculator(self):
+        keys = ["Gauss_Core","Gauss_Memory","XTB_Core","XTB_Memory"]
+        for key in keys:
+            val = self.getSetting("Server/"+key,"")
+            if val != "":
+                self.calculator.config[key] = val
+
+    def pdbAction(self):
+        info = self.getCurrentInfo()
+        if info != None and info['xyz'] != '':
+            self.exportDataFile(lambda :API.xyz2pdb(info['xyz']),"PDB File (*.pdb)")
+
+    def molAction(self):
+        info = self.getCurrentInfo()
+        if info != None and info['xyz'] != '':
+            self.exportDataFile(lambda :API.xyz2mol(info['xyz']),"MOL File (*.mol)")
+
+    def xyzAction(self):
+        info = self.getCurrentInfo()
+        if info != None and info['xyz'] != '':
+            self.exportDataFile(lambda :info['xyz'],"XYZ File (*.xyz)")
+
+    def getCurrentInfo(self):
+        row = self.table.tableView.currentIndex().row()
+        if row < 0:
+            return
+        uuid = self.table.model.item(row,0).text()
+        data = self.db.index_query_id(uuid)
+        if len(data) == 1:
+            return data[0]
+
+    def editAction(self):
+        def update(string):
+            molecule = json.loads(string)
+            self.db.index_update(molecule)
+            self.table.loadDatas(self.db.index_query_all())
+        info = self.getCurrentInfo()
+        if info != None:
+            self.editor.initForm(info)
+            self.editor.finished.connect(update)
+            self.editor.show()
+
+    def copyAction(self):
+        info = self.getCurrentInfo()
+        if info != None and info["mol"] != "":
+            self.editMolecule(info["mol"],type="mol")
+
+    def deleteAction(self):
+        row = self.table.tableView.currentIndex().row()
+        if row < 0:
+            return
+        if self.prompt("Confirmed to delete?",msg='warnning') == QMessageBox.No:
+            return
+        uuid = self.table.model.item(row,0).text()
+        self.db.index_del(uuid)
+        self.table.loadDatas(self.db.index_query_all())
 
     def closeEvent(self, QCloseEvent):
         self.editor.close()
