@@ -15,12 +15,12 @@ class Browser(QMainWindow):
         self.show()
         pass
 
-    def closeEvent(self, event):
-        if self.parent:
-            self.parent.setEnabled(True)
-        event.accept()
+    # def closeEvent(self, event):
+    #     if self.parent:
+    #         self.parent.setEnabled(True)
+    #     event.accept()
 
-    def showEvent(self,event):
-        if self.parent:
-            self.parent.setDisabled(True)
-        event.accept()
+    # def showEvent(self,event):
+    #     if self.parent:
+    #         self.parent.setDisabled(True)
+    #     event.accept()

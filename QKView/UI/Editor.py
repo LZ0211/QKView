@@ -57,10 +57,6 @@ class Editor(QWidget):
     def __init__(self,parent=None):
         super(Editor, self).__init__()
         self.parent = parent
-        if self.parent.getSetting("Editor/Sketcher","Sketcher") == "Sketcher":
-            self.sketcher = Sketcher(self)
-        else:
-            self.sketcher = Indraw(self)
         if self.parent and getattr(self.parent,'browser'):
             self.browser = self.parent.browser
         else:
@@ -68,7 +64,15 @@ class Editor(QWidget):
             self.browser.setWindowFlags(Qt.WindowStaysOnTopHint)
             self.parent.browser = self.browser
         self.initUI()
+        self.initSketcher()
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
+        self.func = None
+
+    def initSketcher(self):
+        if self.parent.getSetting("UI/Sketcher","Sketcher") == "Sketcher":
+            self.sketcher = Sketcher(self)
+        else:
+            self.sketcher = Indraw(self)
 
     def initUI(self):
         self.setGeometry(0, 0, 360, 500)
@@ -88,7 +92,7 @@ class Editor(QWidget):
         
         self.Structure = ImageLabel('')
         self.Structure.setScaledContents(True)
-        self.Structure.clicked.connect(lambda :self.readMOL2D(self.MOL.toPlainText()))
+        self.Structure.clicked.connect(lambda : self.readMOL2D(self.MOL.toPlainText()))
         formLayout.addWidget(QLabel(self.tr("Structure")), 0, 0, 1, 3)
         formLayout.addWidget(self.Structure, 0, 3, 1, 7,alignment=Qt.AlignHCenter)
         #self.disPlayStructure(API.smi2png('c1ccccc1O'))
@@ -120,6 +124,8 @@ class Editor(QWidget):
         self.Search.clicked.connect(self.searchMolecule)
         self.Save.clicked.connect(self.saveMolecule)
         self.PubChem.clicked.connect(self.openPubChem)
+
+        self.finished.connect(lambda x:self.func and self.func(x))
         #formLayout.addWidget(QLabel(self.translate("UUID")), 0, 0, 1, 3)
         #formLayout.addWidget(self.UUID, 0, 3, 1, 7)
         formLayout.addWidget(QLabel(self.tr("SMILES")), 1, 0, 1, 3)
@@ -249,12 +255,12 @@ class Editor(QWidget):
             self.Code.setText(code)
             self.Alias.setText(alias)
             self.Tags.setText(tags)
-            self.Note.setPlainText(note)
-            self.XYZ.setPlainText(xyz)
+            self.Note.setText(note)
+            self.XYZ.setText(xyz)
             
         mol = info['mol'] or API.smi2mol2D2(smi)
         img = info['image'] or API.smi2png(smi)
-        self.MOL.setPlainText(mol)
+        self.MOL.setText(mol)
         self.disPlayStructure(img)
         self.show()
 
@@ -270,7 +276,7 @@ class Editor(QWidget):
         tags = API.getKey(info,'tags')
         tags and self.Tags.setText(tags)
         note = API.getKey(info,'note')
-        note and self.Note.setPlainText(note)
+        note and self.Note.setText(note)
         self.Search.setEnabled(True)
 
     def initDefault(self):
@@ -330,14 +336,16 @@ class Editor(QWidget):
         self.Structure.setFixedSize(width,height)
 
     def once(self,fn):
-        def func(*argv):
-            fn(*argv)
-            self.finished.disconnect(func)
-        self.finished.connect(func)
+        self.func = fn
+        # def func(*argv):
+        #     fn(*argv)
+        #     self.finished.disconnect(func)
+        # self.finished.connect(func)
 
     def closeEvent(self, event):
         self.sketcher.close()
         self.browser.close()
+        self.func = None
         if self.parent:
             self.parent.setEnabled(True)
         event.accept()

@@ -71,7 +71,7 @@ class QuestLine(QWidget):
         self.stopBtn = QPushButton(QIcon("resource/stop.png"),self.tr("Stop"))
         self.clearBtn = QPushButton(QIcon("resource/clear.png"),self.tr("Clear"))
         self.list = QTreeWidget()
-        self.list.setFixedHeight(160)
+        self.list.setFixedHeight(200)
         self.list.setHeaderLabel(self.tr("Calculation Queue"))
         self.list.headerItem().setTextAlignment(0,Qt.AlignHCenter)
 

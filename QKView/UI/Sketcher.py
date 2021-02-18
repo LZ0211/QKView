@@ -55,7 +55,7 @@ class Sketcher(QWidget):
         self.webView = QWebEngineView()
         #self.webView.setFixedSize(400,400)
         self.webView.load(QUrl(API.SketcherURL))
-        self.webView.show()
+        #self.webView.show()
         self.webView.loadFinished.connect(self.ready)
 
         self.confirm = QPushButton(self.tr('Save'))
@@ -63,12 +63,15 @@ class Sketcher(QWidget):
         layout.addWidget(self.confirm, 3, 2, 1, 1)
 
     def loadMolecule(self,mol):
-        if self.isReady:
-            self.execute(JS_loadCanvas2D % mol,self.noop)
         def run():
-            self.execute(JS_loadCanvas2D % mol,self.noop)
+            self.execute(JS_loadCanvas2D % mol)
             self.webView.loadFinished.disconnect(run)
-        self.webView.loadFinished.connect(run)
+
+        if self.isReady:
+            self.execute(JS_loadCanvas2D % mol)
+        else:
+            #self.webView.show()
+            self.webView.loadFinished.connect(run)
         self.show()
 
     def bindConfirmEvent(self):

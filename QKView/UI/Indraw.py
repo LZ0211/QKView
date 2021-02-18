@@ -88,11 +88,11 @@ class Indraw(QWidget):
         self.webView = QWebEngineView()
         #self.webView.setFixedSize(400,400)
         #self.webView.settings().setDefaultTextEncoding("iso-8859-1")
+        self.webView.loadFinished.connect(lambda:self.execute(JS_forbidden))
+        self.webView.loadFinished.connect(self.ready)
         self.webView.setHtml(requests.get(API.IndrawURL).text,QUrl("http://indrawforweb.integle.com/indraw_inline/"))
         #self.webView.load(QUrl(API.IndrawURL+"?"+str(time.time())))
         self.webView.show()
-        self.webView.loadFinished.connect(lambda:self.execute(JS_forbidden))
-        self.webView.loadFinished.connect(self.ready)
 
         self.confirm = QPushButton(self.tr('Save'))
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal,self)
@@ -100,13 +100,17 @@ class Indraw(QWidget):
         layout.addRow(self.buttonBox)
 
     def loadMolecule(self,mol):
-        if self.isReady:
-            self.execute(JS_loadCanvas2D % mol)
         def run():
             self.execute(JS_loadCanvas2D % mol)
             self.webView.loadFinished.disconnect(run)
-        self.webView.loadFinished.connect(run)
-        self.show()
+            self.show()
+
+        if self.isReady:
+            self.execute(JS_loadCanvas2D % mol)
+            self.show()
+        else:
+            self.webView.show()
+            self.webView.loadFinished.connect(run)
 
     def bindConfirmEvent(self):
         def updateMol(arr):

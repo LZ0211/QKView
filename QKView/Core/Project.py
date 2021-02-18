@@ -2,7 +2,6 @@ import sys
 from PyQt5.QtCore import QThread, pyqtSignal,QObject
 from . import API
 import requests,re,json,time,traceback
-import numpy as np
 
 reg_braket = re.compile(r'^\{\s*(\w+)\s*\}$')
 reg_double_braket = re.compile(r'^\{\{\s*(\S+)\s*\}\}$')
@@ -354,6 +353,7 @@ class Project(QThread):
     processed = pyqtSignal(int)
     finished = pyqtSignal(str)
     terminal = pyqtSignal()
+    returned = pyqtSignal(str,str)
     config = {
         "Gauss_Core" : 24,
         "Gauss_Memory" : '60GB',
@@ -515,10 +515,11 @@ class Project(QThread):
 
     def read_gauss_geom(self):
         self.geometry = API.read_gauss_data(self.name,'opt')[0]['Summary']['Geometry']
-        self.parent.db.index_update({
+        info = {
             "uuid":self.name,
             "xyz":API.geom2xyz(self.geometry)
-        })
+        }
+        self.returned.emit('index',json.dumps(info))
 
     def read_xtb_geom(self):
         self.geometry = API.read_xtb_data(self.name,'opt')["Geometry"]
@@ -598,13 +599,15 @@ class Project(QThread):
 
     def pipline_calc_opt(self):
         data = API.read_gauss_data(self.name,'opt',info='summary')[0]['Summary']
-        self.parent.db.index_update({
+        info = {
             "uuid":self.name,
             "xyz":API.geom2xyz(data["Geometry"])
-        }) 
+        }
+        self.returned.emit('index',json.dumps(info))
 
     def pipline_calc_sp(self):
         data = API.read_gauss_data(self.name,"sp",info='summary')[0]["Summary"]
+        orbt = API.read_gauss_data(self.name,"sp",info='oribit')[0]["Oribit"]
         summary = {
             'uuid':self.name,
             'geometry':json.dumps(data["Geometry"]),
@@ -612,19 +615,14 @@ class Project(QThread):
             'spin':data["Spin"],
             'point_group':data["PointGroup"],
             'energy':data["Energy"],
+            "homo":orbt[0][-1]*API.ENERGY_eV,
+            "lumo":orbt[1][0]*API.ENERGY_eV,
             'dipole_X':data["Dipole"][0],
             'dipole_Y':data["Dipole"][1],
             'dipole_Z':data["Dipole"][2],
-            'dipole':float(np.linalg.norm(np.array(data["Dipole"])))
+            'dipole':API.normalize(data["Dipole"])
         }
-        self.parent.db.summary_update_insert(summary)
-        data = API.read_gauss_data(self.name,"sp",info='oribit')[0]["Oribit"]
-        summary = {
-            "uuid":self.name,
-            "homo":data[0][-1]*API.ENERGY_eV,
-            "lumo":data[1][0]*API.ENERGY_eV
-        }
-        self.parent.db.summary_update(summary)
+        self.returned.emit('summary',json.dumps(summary))
 
     def pipline_calc_freq(self):
         data = API.read_gauss_data(self.name,"freq",info='thermal')[0]["Thermal"]
@@ -635,7 +633,7 @@ class Project(QThread):
             'cor_enthalpy':data['Thermal correction to Enthalpy'],
             'cor_gibbs':data['Thermal correction to Gibbs Free Energy']
         }
-        self.parent.db.summary_update_insert(summary)
+        self.returned.emit('summary',json.dumps(summary))
 
     def pipline_calc_cdft(self):
         data = API.read_mwfn_data(self.name,job="gauss_fukui")
@@ -657,7 +655,7 @@ class Project(QThread):
             'condensed_nucle_index':json.dumps(data['CNP']),
             'condensed_softness':json.dumps(data['CSO'])
         }
-        self.parent.db.cdft_update_insert(cdft)
+        self.returned.emit('cdft',json.dumps(cdft))
 
     def pipline_calc_mulliken_charge(self):
         data = API.read_mwfn_data(self.name,job="gauss_mulliken_charge")
@@ -665,7 +663,7 @@ class Project(QThread):
             'uuid':self.name,
             'mulliken':json.dumps(data),
         }
-        self.parent.db.charge_update_insert(charge)
+        self.returned.emit('charge',json.dumps(charge))
 
     def pipline_calc_adch_charge(self):
         data = API.read_mwfn_data(self.name,job="gauss_adch_charge")
@@ -673,7 +671,7 @@ class Project(QThread):
             'uuid':self.name,
             'adch':json.dumps(data),
         }
-        self.parent.db.charge_update_insert(charge)
+        self.returned.emit('charge',json.dumps(charge))
 
     def pipline_calc_cm5_charge(self):
         data = API.read_mwfn_data(self.name,job="gauss_cm5_charge")
@@ -681,7 +679,7 @@ class Project(QThread):
             'uuid':self.name,
             'cm5':json.dumps(data),
         }
-        self.parent.db.charge_update_insert(charge)
+        self.returned.emit('charge',json.dumps(charge))
 
     def pipline_calc_resp_charge(self):
         data = API.read_mwfn_data(self.name,job="gauss_resp_charge")
@@ -689,7 +687,7 @@ class Project(QThread):
             'uuid':self.name,
             'resp':json.dumps(data),
         }
-        self.parent.db.charge_update_insert(charge)
+        self.returned.emit('charge',json.dumps(charge))
 
     def pipline_calc_mulliken_bo(self):
         data = API.read_mwfn_data(self.name,job="gauss_mulliken_bo")
@@ -697,7 +695,7 @@ class Project(QThread):
             'uuid':self.name,
             'mulliken':json.dumps(data),
         }
-        self.parent.db.bo_update_insert(bo)
+        self.returned.emit('bo',json.dumps(bo))
 
     def pipline_calc_mayer_bo(self):
         data = API.read_mwfn_data(self.name,job="gauss_mayer_bo")
@@ -705,7 +703,7 @@ class Project(QThread):
             'uuid':self.name,
             'mayer':json.dumps(data),
         }
-        self.parent.db.bo_update_insert(bo)
+        self.returned.emit('bo',json.dumps(bo))
 
     def pipline_calc_laplacian_bo(self):
         data = API.read_mwfn_data(self.name,job="gauss_laplacian_bo")
@@ -713,7 +711,7 @@ class Project(QThread):
             'uuid':self.name,
             'laplacian':json.dumps(data),
         }
-        self.parent.db.bo_update_insert(bo)
+        self.returned.emit('bo',json.dumps(bo))
 
     def pipline_calc_fuzzy_bo(self):
         data = API.read_mwfn_data(self.name,job="gauss_fuzzy_bo")
@@ -721,7 +719,7 @@ class Project(QThread):
             'uuid':self.name,
             'fuzzy':json.dumps(data),
         }
-        self.parent.db.bo_update_insert(bo)
+        self.returned.emit('bo',json.dumps(bo))
 
     def pipline_calc_dipole(self):
         data = API.read_gauss_data(self.name,"dipole",info='summary')[0]["Summary"]
@@ -730,9 +728,9 @@ class Project(QThread):
             'dipole_X':data["Dipole"][0],
             'dipole_Y':data["Dipole"][1],
             'dipole_Z':data["Dipole"][2],
-            'dipole':float(np.linalg.norm(np.array(data["Dipole"])))
+            'dipole':API.normalize(data["Dipole"])
         }
-        self.parent.db.summary_update_insert(summary)
+        self.returned.emit('summary',json.dumps(summary))
 
     def pipline_calc_surface(self):
         data = API.read_mwfn_data(self.name,job="gauss_surface")
@@ -758,7 +756,7 @@ class Project(QThread):
             'nonpolar_area':data['NonPolarArea'],
             'pi':data['Pi']
         }
-        self.parent.db.surface_update_insert(surface)
+        self.returned.emit('surface',json.dumps(surface))
 
     def pipline_calc_nmr(self):
         pass

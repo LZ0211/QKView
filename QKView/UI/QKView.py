@@ -2,7 +2,7 @@ import os,sys
 from PyQt5.QtWidgets import QWidget, QApplication, QDesktopWidget, QListWidgetItem, QTreeWidgetItem, QSplitter, QHBoxLayout, QVBoxLayout, QGridLayout, QGroupBox, QPushButton, QSplashScreen, QToolBar, QMainWindow, QSystemTrayIcon, QStatusBar, QToolBar, QMenuBar, QMenu, QAction,QStyleFactory,QFileDialog,QMessageBox
 from PyQt5.QtCore import QUrl, pyqtSignal, QSize, Qt, QSettings
 from PyQt5.QtGui import QIcon, QColor, QPixmap,QCursor
-from . import Sketcher, Indraw, Editor, MainWindow, Table, Browser, QuestLine,DataView
+from . import Sketcher, Indraw, Editor, MainWindow, Table, Browser, QuestLine,DataView,Preference
 from ..Core import API
 from ..Core.SQL import MoleculeDataBase
 from ..Core.Project import Project
@@ -26,7 +26,7 @@ class QKView(QMainWindow,MainWindow):
                 "icon":"Add.png",
                 "actions":[
                     ("Import",'import.png'),
-                    ("Draw",'mol.png')
+                    ("Draw",'draw.png')
                 ]
             },
             ("Preference",'setting.png'),
@@ -44,18 +44,11 @@ class QKView(QMainWindow,MainWindow):
                 "icon":"hexagonal.png",
                 "actions":["pdb","xyz","mol"]
             },
+            ("Data Source","source.png"),
+            ("Local Data","folder.png"),
             ("Add To Queue","queue.png")
         ]
     }
-
-    DataMenu = {
-        "name":"&Data",
-        "actions":[
-            ("Data Source","source.png"),
-            ("Data Download","download.png")
-        ]
-    }
-
     ViewMenu = {
         "name":"&View",
         "actions":[
@@ -64,7 +57,6 @@ class QKView(QMainWindow,MainWindow):
             ('VMD','VMD.png')
         ]
     }
-
     ToolMenu = {
         "name":"&Tool",
         "actions":[
@@ -97,7 +89,7 @@ class QKView(QMainWindow,MainWindow):
         ]
     }
 
-    ToolBar = ["Import","Draw","|","Edit","Delete","Copy","Add To Queue","|","Data Source","GaussView","VESTA","VMD"]
+    ToolBar = ["Import","Draw","|","Edit","Delete","Copy","Local Data","Add To Queue","|","GaussView","VESTA","VMD"]
 
     def __init__(self,dirname):
         super(QKView, self).__init__(dirname)
@@ -108,16 +100,17 @@ class QKView(QMainWindow,MainWindow):
         #self.browser.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.view = DataView(self.tr("DataView"),self)
         self.view.setHidden(True)
+        self.editor = Editor(self)
+        self.preference = Preference(self)
         self.addDockWidget(Qt.RightDockWidgetArea,self.view)
         self.renderWindow()
         self.translateUI()
-        self.show()
-        self.editor = Editor(self)
         #self.freezeActions(["Edit","Delete","Data Source","Data Download"])
         self.bindActionEvents()
         self.bindTableEvents()
         self.loadDataBase()
         self.configCalculator()
+        self.show()
         #self.browser.open('http://172.16.11.164/static/indraw/')
 
     def renderWindow(self):
@@ -143,7 +136,6 @@ class QKView(QMainWindow,MainWindow):
         self.menuTheme = QMenu("&Theme")
         self.menuBar.addMenu(self.setMenu(self.FileMenu))
         self.menuBar.addMenu(self.setMenu(self.EditMenu))
-        self.menuBar.addMenu(self.setMenu(self.DataMenu))
         self.menuBar.addMenu(self.setMenu(self.ViewMenu))
         self.menuBar.addMenu(self.setMenu(self.ToolMenu))
         self.menuBar.addMenu(self.LangMenu())
@@ -168,10 +160,7 @@ class QKView(QMainWindow,MainWindow):
         #任务
         self.quest = QuestLine(self)
         #表格
-        self.table = Table(self,
-            cols = ['uuid','image','smiles','cas','name','formular','mass','alias','code','tags'],
-            header = ['ID','2D Structure','smiles','CAS NO.','Chemical Name','Chemical Formular','Molecular Mass','Alias','Private Code','Property Labels']
-        )
+        self.table = Table(self)
         layout = QHBoxLayout()
         layout.addWidget(self.quest)
         layout.addWidget(self.table)
@@ -187,17 +176,21 @@ class QKView(QMainWindow,MainWindow):
                 lambda f:self.editMolecule(f,type="filename")
             )
         )
-        self.getAction("Draw").triggered.connect(lambda :self.editMolecule())
+        self.getAction("Draw").triggered.connect(self.editMolecule)
         self.getAction("Exit").triggered.connect(self.close)
-        self.getAction("GaussView").triggered.connect(self.interfaceGaussView)
-        self.getAction("VESTA").triggered.connect(self.interfaceGaussVESTA)
-        self.getAction("VMD").triggered.connect(self.interfaceGaussVMD)
+        self.getAction("GaussView").triggered.connect(lambda :self.interfaceGaussView(self.tempFile()))
+        self.getAction("VESTA").triggered.connect(lambda :self.interfaceVESTA(self.tempFile()))
+        self.getAction("VMD").triggered.connect(lambda :self.interfaceVMD(self.tempFile()))
         self.getAction('pdb').triggered.connect(self.pdbAction)
         self.getAction('mol').triggered.connect(self.molAction)
         self.getAction('xyz').triggered.connect(self.xyzAction)
         self.getAction('Edit').triggered.connect(self.editAction)
         self.getAction('Copy').triggered.connect(self.copyAction)
         self.getAction('Delete').triggered.connect(self.deleteAction)
+        self.getAction('Preference').triggered.connect(self.preference.show)
+        self.getAction("Data Source").triggered.connect(self.openFTP)
+        self.getAction("Local Data").triggered.connect(self.openLocation)
+        self.getAction('Add To Queue').triggered.connect(self.addQueue)
 
     def bindTableEvents(self):
         def showTableMenu():
@@ -206,39 +199,12 @@ class QKView(QMainWindow,MainWindow):
                 self.getAction('Edit'),
                 self.getAction('Copy'),
                 self.getAction('Delete'),
-                self.getAction("Add To Queue"),
-                self.getAction("Data Source")
+                self.getAction("Local Data")
             ])
             self.table.tableView.contextMenu.addMenu(self.allMenus["Export"])
             self.table.tableView.contextMenu.popup(QCursor.pos())
             self.table.tableView.contextMenu.show()
-
-        def source():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            uuid = self.table.model.item(row,0).text()
-            path = "{host}/{uuid}/".format(host=API.FTP,uuid=uuid)
-            subprocess.Popen(["explorer.exe",path])
-            #os.startfile()
-            #self.browser.open(QUrl("ftp://{host}/{uuid}/".format(host=API.HOST,uuid=uuid)))
-            #self.browser.show()
-
-        def queue():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            uuid = self.table.model.item(row,0).text()
-            data = self.db.index_query_id(uuid)[0]
-            count = self.quest.list.topLevelItemCount()
-            for i in range(count):
-                if self.quest.list.topLevelItem(i).text(0) == uuid:
-                    return
-            item = QTreeWidgetItem(self.quest.list)
-            item.setText(0,uuid)
-            self.quest.list.insertTopLevelItem(count,item)
-            self.calculator.add_queue(data)
-
+             
         def search():
             text = self.table.searchText.text()
             keys = self.table.searchField.currentText()
@@ -282,7 +248,7 @@ class QKView(QMainWindow,MainWindow):
             row = self.table.tableView.currentIndex().row()
             if row < 0:
                 return
-            uuid = self.table.model.item(row,0).text()
+            uuid = self.table.model.item(row,1).text()
             if self.view.uuid == uuid and self.view.isVisible():
                 return
             self.view.setId(uuid)
@@ -294,7 +260,7 @@ class QKView(QMainWindow,MainWindow):
             row = self.table.tableView.currentIndex().row()
             if row < 0:
                 return
-            uuid = self.table.model.item(row,0).text()
+            uuid = self.table.model.item(row,1).text()
             if self.view.uuid == uuid:
                 return
             self.view.setId(uuid)
@@ -305,14 +271,30 @@ class QKView(QMainWindow,MainWindow):
                 self.calculator.processed.emit(0)
             self.calculator.set_text_jobs(self.quest.valueList())
 
-        self.table.tableView.setColumnHidden(0,True)
+        def updateDataBase(name,info):
+            if name == "index":
+                self.db.index_update(json.loads(info))
+            elif name == "summary":
+                self.db.summary_update_insert(json.loads(info))
+            elif name == "cdft":
+                self.db.cdft_update_insert(json.loads(info))
+            elif name == "charge":
+                self.db.charge_update_insert(json.loads(info))
+            elif name == "bo":
+                self.db.bo_update_insert(json.loads(info))
+            elif name == "surface":
+                self.db.surface_update_insert(json.loads(info))
+            elif name == "spectrum":
+                self.db.spectrum_update_insert(json.loads(info))
+            elif name == "binding":
+                self.db.binding_update_insert(json.loads(info))
+
+        
         self.table.tableView.customContextMenuRequested.connect(showTableMenu)
         self.table.tableView.doubleClicked.connect(showDataView)
         #self.table.tableView.clicked.connect(swicthDataView)
         self.table.tableView.selectionModel().selectionChanged.connect(swicthDataView)
-        
-        self.getAction('Add To Queue').triggered.connect(queue)
-        self.getAction("Data Source").triggered.connect(source)
+
         self.table.searchBtn.clicked.connect(search)
         self.table.searchText.returnPressed.connect(search)
         self.quest.model.itemChanged.connect(updateJobs)
@@ -321,6 +303,7 @@ class QKView(QMainWindow,MainWindow):
         self.quest.clearBtn.clicked.connect(clearJobs)
         self.calculator.processed.connect(self.quest.processBar.setValue)
         self.calculator.terminal.connect(terminal)
+        self.calculator.returned.connect(updateDataBase)
 
         #未实现的功能不允许选择
         texts = self.quest.Quests
@@ -340,8 +323,7 @@ class QKView(QMainWindow,MainWindow):
     def editMolecule(self,input="",type="smi"):
         def add(string):
             molecule = json.loads(string)
-            self.db.index_add(molecule)
-            self.table.loadDatas(self.db.index_query_all())
+            self.db.index_add(molecule) and self.table.loadDatas(self.db.index_query_all())
         if type == "filename":
             ext = os.path.splitext(input)[1].lower()
             dat = open(input,encoding="utf-8").read()
@@ -353,46 +335,76 @@ class QKView(QMainWindow,MainWindow):
                 return self.editMolecule(dat,type="pdb")
             return
         if type == "xyz":
-            self.editor.finished.connect(add)
+            self.editor.once(add)
             return self.editor.readXYZ(input)
         if type == "pdb":
-            self.editor.finished.connect(add)
+            self.editor.once(add)
             return self.editor.readPDB(input)
         if type == "mol":
-            self.editor.finished.connect(add)
+            self.editor.once(add)
             return self.editor.readMOL(input)
         if type == "smi":
-            self.editor.finished.connect(add)
+            self.editor.once(add)
             return self.editor.readSMI(input)
         pass
     
-    def interfaceGaussView(self):
-        GaussView = self.getSetting("Interface/GaussView","")
-        file = self.tempFile()
+    def interfaceGaussView(self,file,*argv):
+        GaussView = self.getSetting("Interface/GaussView",os.path.join(self.thisDir,"plugins/g16w/gview.exe"))
         if GaussView == "" or file == None:
             return
-        subprocess.Popen([GaussView, file],shell=True)
+        subprocess.Popen([GaussView, file,*argv],shell=True)
 
-    def interfaceGaussVESTA(self):
-        VESTA = self.getSetting("Interface/VESTA","")
-        file = self.tempFile()
+    def interfaceVESTA(self,file,*argv):
+        VESTA = self.getSetting("Interface/VESTA",os.path.join(self.thisDir,"plugins/VESTA/VESTA.exe"))
         if VESTA == "" or file == None:
             return
-        subprocess.Popen([VESTA, file],shell=True)
+        subprocess.Popen([VESTA, file,*argv],shell=True)
 
-    def interfaceGaussVMD(self):
-        VMD = self.getSetting("Interface/VMD","")
-        file = self.tempFile()
+    def interfaceVMD(self,file,cmd=None,silent=False,*argv):
+        VMD = self.getSetting("Interface/VMD",os.path.join(self.thisDir,"plugins/VMD/vmd.exe"))
         if VMD == "" or file == None:
             return
-        subprocess.Popen([VMD, file],shell=True)
+        cwd = os.path.dirname(file)
+        env = {
+            "path":os.path.dirname(VMD),
+            "VMDDIR":os.path.dirname(VMD),
+        }
+        if cmd == None:
+            subprocess.Popen([VMD, file,"-nt"],shell=True,cwd=cwd,env=env)
+        else:
+            temp = mktemp()
+            open(temp,'w+').write(cmd)
+            if silent:
+                subprocess.Popen([VMD, "-dispdev", "none",file],shell=True,cwd=cwd,env=env)
+            else:
+                subprocess.Popen([VMD, file],shell=True,cwd=cwd,env=env)
+
+    def interfaceMultiwfn(self,file,cmd=None,silent=False,*argv):
+        Multiwfn = self.getSetting("Interface/Multiwfn",os.path.join(self.thisDir,"plugins/Multiwfn/Multiwfn.exe"))
+        if Multiwfn == "" or file == None:
+            return
+        cwd = os.path.dirname(file)
+        env = {
+            "Multiwfnpath":os.path.dirname(Multiwfn),
+            "KMP_STACKSIZE":self.getSetting("Interface/Multiwfn_Memory",250000000),
+            "GAUSS_MEMDEF":self.getSetting("Interface/Gauss_Memory","2GB"),
+        }
+        if cmd == None:
+            subprocess.Popen(["start", Multiwfn, file],shell=True,cwd=cwd,env=env)
+        else:
+            temp = mktemp()
+            open(temp,'w+').write(cmd)
+            if silent:
+                subprocess.Popen(["start", Multiwfn, file, "<", temp, ">", "log.mwfn"],shell=True,cwd=cwd,env=env)
+            else:
+                subprocess.Popen(["start", Multiwfn, file, "<", temp],shell=True,cwd=cwd,env=env)
 
     def tempFile(self,format=".pdb"):
         format = format.lower()
         row = self.table.tableView.currentIndex().row()
         if row < 0:
             return
-        uuid = self.table.model.item(row,0).text()
+        uuid = self.table.model.item(row,1).text()
         data = self.db.index_query_id(uuid)
         if len(data) == 1:
             info = data[0]
@@ -406,16 +418,19 @@ class QKView(QMainWindow,MainWindow):
             else:
                 format = ".xyz"
                 string = xyz
-            tempdir = self.getSetting('File/TempDirectory','')
-            if tempdir == '':
-                tempfile = mktemp() + format
-            else:
-                tempfile = os.path.join(tempdir,uuid + format)
+            tempdir = self.getSetting('File/TempDirectory',os.path.join(self.thisDir,"cache"))
+            if not os.path.exists(tempdir):
+                os.makedirs(tempdir)
+            tempfile = os.path.join(tempdir,uuid + format)
             open(tempfile,"w+").write(string)
             return tempfile
         return
 
     def testSql(self):
+        if int(self.getSetting("Enviroment/GPU",0)) == 1:
+            self.browser.open(QUrl("chrome://gpu"))
+            self.browser.show()
+        #chrome://gpu
         #print(self.db.index_search('碳酸酯 溶剂'))
         #self.calculator.add
         #self.calculator.("9fb05581-bd1b-3cfe-929a-75a14a4c4568")
@@ -427,9 +442,15 @@ class QKView(QMainWindow,MainWindow):
 
     #配置计算参数
     def configCalculator(self):
-        keys = ["Gauss_Core","Gauss_Memory","XTB_Core","XTB_Memory"]
-        for key in keys:
-            val = self.getSetting("Server/"+key,"")
+        setting = {
+            "Gauss_Core":24,
+            "Gauss_Memory":"60GB",
+            "XTB_Core":24,
+            "XTB_Memory":"2500m",
+            "Multiwfn_Memory":2500000000
+        }
+        for (key,val) in setting.items():
+            val = self.getSetting("Server/"+key,val)
             if val != "":
                 self.calculator.config[key] = val
 
@@ -452,26 +473,64 @@ class QKView(QMainWindow,MainWindow):
         row = self.table.tableView.currentIndex().row()
         if row < 0:
             return
-        uuid = self.table.model.item(row,0).text()
+        uuid = self.table.model.item(row,1).text()
         data = self.db.index_query_id(uuid)
         if len(data) == 1:
             return data[0]
 
+    def addQueue(self):
+        items = self.table.selectedItems()
+        count = self.quest.list.topLevelItemCount()
+        inList = []
+        for i in range(count):
+            inList.append(self.quest.list.topLevelItem(i).text(0))
+        for uuid in items:
+            if uuid in inList:
+                continue
+            data = self.db.index_query_id(uuid)[0]
+            item = QTreeWidgetItem(self.quest.list)
+            item.setText(0,uuid)
+            self.quest.list.insertTopLevelItem(count,item)
+            self.calculator.add_queue(data)
+
+    def openFTP(self):
+        row = self.table.tableView.currentIndex().row()
+        if row < 0:
+            return
+        uuid = self.table.model.item(row,1).text()
+        path = "{host}/{uuid}/".format(host=API.FTP,uuid=uuid)
+        subprocess.Popen(["explorer.exe",path])
+        #os.startfile()
+        #self.browser.open(QUrl("ftp://{host}/{uuid}/".format(host=API.HOST,uuid=uuid)))
+        #self.browser.show()
+
+    def openLocation(self):
+        row = self.table.tableView.currentIndex().row()
+        if row < 0:
+            return
+        uuid = self.table.model.item(row,1).text()
+        path = os.path.join(self.thisDir,'datas',uuid)
+        subprocess.Popen(["explorer.exe",path])
+
     def editAction(self):
         def update(string):
             molecule = json.loads(string)
-            self.db.index_update(molecule)
-            self.table.loadDatas(self.db.index_query_all())
+            if molecule and molecule["uuid"] == info["uuid"]:
+                self.db.index_update(molecule) and self.table.loadDatas(self.db.index_query_all())
         info = self.getCurrentInfo()
         if info != None:
             self.editor.initForm(info)
-            self.editor.finished.connect(update)
+            self.editor.once(update)
             self.editor.show()
 
     def copyAction(self):
+        def add(string):
+            molecule = json.loads(string)
+            self.db.index_add(molecule) and self.table.loadDatas(self.db.index_query_all())
         info = self.getCurrentInfo()
         if info != None and info["mol"] != "":
-            self.editMolecule(info["mol"],type="mol")
+            self.editor.once(add)
+            self.editor.readMOL2D(info["mol"])
 
     def deleteAction(self):
         row = self.table.tableView.currentIndex().row()
@@ -479,7 +538,7 @@ class QKView(QMainWindow,MainWindow):
             return
         if self.prompt("Confirmed to delete?",msg='warnning') == QMessageBox.No:
             return
-        uuid = self.table.model.item(row,0).text()
+        uuid = self.table.model.item(row,1).text()
         self.db.index_del(uuid)
         self.table.loadDatas(self.db.index_query_all())
 

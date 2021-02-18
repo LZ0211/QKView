@@ -1,9 +1,9 @@
-from PyQt5.QtWidgets import QDockWidget,QWidget,QTabWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,QGridLayout,QLabel,QTextEdit,QPushButton,QAbstractItemView,QTableView,QMenu,QAction
-from PyQt5.QtCore import QUrl,Qt
+from PyQt5.QtWidgets import QDockWidget,QWidget,QFileDialog,QTabWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QLineEdit,QGridLayout,QLabel,QTextEdit,QPushButton,QAbstractItemView,QTableView,QMenu,QAction,QTreeView,QFileSystemModel,QComboBox
+from PyQt5.QtCore import QUrl,Qt,QDir
 from PyQt5.QtGui import QPixmap,QImage,QStandardItemModel,QStandardItem,QIcon,QCursor,QDoubleValidator
 from PyQt5.QtWebEngineWidgets import QWebEngineView,QWebEngineSettings
 from ..Core import API
-import traceback,os,requests
+import traceback,os,requests,json
 
 class QDataLineEdit(QWidget):
     def __init__(self,text="",suffix=None,prefix=None):
@@ -96,11 +96,31 @@ viewer.zoomTo();
 viewer.render(noop);
 '''
 
+JS_displayCharge = '''var pdb = `%s`
+viewer.clear();     
+var mol = viewer.addModel(pdb, 'pqr');
+var grad =  new $3Dmol.Gradient.RWB(%s,%s);
+mol.setStyle({},{
+    stick:{radius:0.075,colorscheme:{prop:'partialCharge',gradient:grad}},
+    sphere:{radius:0.25,colorscheme:{prop:'partialCharge',gradient:grad}}
+});
+viewer.addPropertyLabels("atom",{},{fontSize: 14,showBackground:false,alignment:"center"})
+viewer.addPropertyLabels("charge",{},{fontSize: 12,showBackground:false})
+//mol.setStyle({elem:'H'},{sphere:{radius:0.25,colorscheme:{prop:'partialCharge',gradient:grad}}},true);
+viewer.zoomTo();
+viewer.render(noop);
+'''
+
+JS_loadMOL = '''var mol = `%s`
+transformer3d.loadMolecule(ChemDoodle.readMOL(mol,1))
+'''
+
 class DataView(QDockWidget):
     def __init__(self,str,parent=None):
         super(DataView,self).__init__(str,parent)
         self.parent = parent
         self.uuid = ""
+        self.cache = []
         self.pageIndex = 0
         self.setFixedWidth(360)
         #self.setMinimumSize(300,600)
@@ -128,8 +148,11 @@ class DataView(QDockWidget):
         self.initStructure()
         self.initExplorer()
         self.initProperty()
+        self.initReactivity()
 
     def showDataContent(self):
+        if self.pageIndex in self.cache:
+            return
         if self.pageIndex == 0:
             self.tryRun(self.showSummary)()
         elif self.pageIndex == 1:
@@ -139,11 +162,10 @@ class DataView(QDockWidget):
         elif self.pageIndex == 3:
             self.tryRun(self.showProperty)()
         elif self.pageIndex == 4:
-            pass
+            self.tryRun(self.showReactivity)()
         elif self.pageIndex == 5:
             pass
-        elif self.pageIndex == 6:
-            pass
+        self.cache.append(self.pageIndex)
 
     def switchPage(self,ndx):
         self.pageIndex = ndx
@@ -151,11 +173,12 @@ class DataView(QDockWidget):
 
     def setId(self,uuid):
         self.uuid = uuid
+        self.cache = []
         self.showDataContent()
 
     def initSummary(self):
         self.summary_3dView = QWebEngineView(self)
-        self.summary_3dView.setUrl(QUrl(API._3DViewURL+"?t=1234567890"))
+        self.summary_3dView.setUrl(QUrl(API._3DViewURL))
         self.summary_3dView.page().settings().setAttribute(QWebEngineSettings.ShowScrollBars,False)
         self.summary_3dView.setFixedHeight(200)
         #self._3dView.setFixedWidth(300)
@@ -163,10 +186,12 @@ class DataView(QDockWidget):
         self.summary_smiles = QLineEdit("")
         self.summary_formular = QLineEdit("")
         self.summary_name = QLineEdit("")
+        self.summary_cas = QLineEdit("")
         self.summary_mass = QLineEdit("")
         self.summary_charge = QLineEdit("")
         # self.alias = QLabel("")
         self.summary_point_group = QLineEdit("C1")
+        self.summary_dipole = QLineEdit("")
         self.summary_homo = QLineEdit("")
         self.summary_lumo = QLineEdit("")
         self.summary_note = QTextEdit("")
@@ -180,9 +205,11 @@ class DataView(QDockWidget):
             "SMILES":self.summary_smiles,
             "Chemical Formular":self.summary_formular,
             "Chemical Name":self.summary_name,
+            "CAS NO.":self.summary_cas,
             "Molecular Mass":self.summary_mass,
             "Charge":self.summary_charge,
             "Point Group":self.summary_point_group,
+            "Dipole":self.summary_dipole,
             "HOMO":self.summary_homo,
             "LUMO":self.summary_lumo,
             "Note":self.summary_note
@@ -198,11 +225,13 @@ class DataView(QDockWidget):
         pass
 
     def showSummary(self):
+        #self.setFixedWidth(360)
         info = self.parent.db.index_query_id(self.uuid)[0]
-        self.summary_3dView.page().runJavaScript(JS_loadXYZ % info["xyz"],lambda *argv:None)
+        self.summary_3dView.page().runJavaScript(JS_loadMOL % API.xyz2mol(info["xyz"]),lambda *argv:None)
         self.summary_smiles.setText(info["smiles"])
         self.summary_formular.setText(info["formular"])
         self.summary_name.setText(info["name"])
+        self.summary_cas.setText(info["cas"])
         self.summary_mass.setText(str(info["mass"]))
         self.summary_charge.setText(str(info["charge"]))
         self.summary_note.setText(info["note"])
@@ -210,10 +239,12 @@ class DataView(QDockWidget):
         if len(summary) == 1:
             summary = summary[0]
             self.summary_point_group.setText(summary["point_group"])
+            self.summary_dipole.setText('%.4f' % summary["dipole"])
             self.summary_homo.setText('%.4f eV' % summary["homo"])
             self.summary_lumo.setText('%.4f eV' % summary["lumo"])
         else:
             self.summary_point_group.setText("")
+            self.summary_dipole.setText("")
             self.summary_homo.setText("")
             self.summary_lumo.setText("")
         pass
@@ -223,12 +254,36 @@ class DataView(QDockWidget):
             xyz = self.structure_xyz.toPlainText()
             self.parent.db.index_update({"uuid":self.uuid,"xyz":xyz})
             self.structure_edit.setDisabled(True)
+
+        def saveImage(*argv):
+            info = self.parent.db.index_query_id(self.uuid)[0]
+            if info['image'] != "":
+                img = API.base64ToImage(info['image'])
+                ext = "Portable Network Graphics (*.png)"
+                (Name,Type) = QFileDialog.getSaveFileName(
+                    self,self.tr("Save File"),
+                    self.parent.getSetting("File/lastFilePath",self.parent.defaultDir),ext,ext)
+                if Name == '':
+                    return
+                fileName = API.formatPath(Name)
+                open(fileName,'wb+').write(img)
+
+        def showMenu():
+            menu = QMenu(self)
+            saveImg = QAction(self.tr('Save Image'),self)
+            saveImg.triggered.connect(self.tryRun(saveImage))
+            self.img_menu = menu
+            menu.addAction(saveImg)
+            menu.popup(QCursor.pos())
+            menu.show()
         self.structure_image = QLabel('')
         self.structure_image.setScaledContents(True)
         self.structure_xyz = QTextEdit("")
         self.structure_edit = QPushButton(self.tr("Save Geometry"))
         self.structure_edit.clicked.connect(saveGeom)
         self.structure_xyz.textChanged.connect(lambda :self.structure_edit.setEnabled(True))
+        self.structure_image.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.structure_image.customContextMenuRequested.connect(showMenu)
         layout = QVBoxLayout(self.Structure)
         layout.addWidget(self.structure_image,alignment=Qt.AlignHCenter)
         layout.addWidget(QLabel("XYZ"))
@@ -237,6 +292,7 @@ class DataView(QDockWidget):
         pass
 
     def showStructure(self):
+        #self.setFixedWidth(360)
         info = self.parent.db.index_query_id(self.uuid)[0]
         if info['image'] == "":
             self.structure_image.setText("")
@@ -262,18 +318,40 @@ class DataView(QDockWidget):
                 self.file_view.horizontalHeader().setSortIndicator(idx, Qt.AscendingOrder)
                 self.file_order = "D"
         def showTableMenu(*argv):
-            self.file_view.contextMenu = QMenu(self)
-            file = currentFile()
+            menu = QMenu(self)
+            self.file_view.contextMenu = menu
+            file = currentTableFile()
             if file == None:
+                menu.addActions([self.file_refresh])
+                menu.popup(QCursor.pos())
+                menu.show()
                 return
-            if os.path.exists(file):
-                self.file_view.contextMenu.addActions([self.file_read,self.file_dele])
-            else:
-                self.file_view.contextMenu.addActions([self.file_down])
-            self.file_view.contextMenu.popup(QCursor.pos())
-            self.file_view.contextMenu.show()
+            menu.addActions([self.file_down,self.file_refresh])
+            menu.popup(QCursor.pos())
+            menu.show()
 
-        def currentFile():
+        def showTreeMenu(*argv):
+            menu = QMenu(self)
+            self.tree.contextMenu = menu
+            file = currentTreeFile()
+            if file == "":
+                return
+            menu.addActions([self.file_read,self.file_dele])
+            ext = file.split(".")[-1].lower()
+            if ext in ["gjf"]:
+                menu.addActions([self.file_gview])
+            if ext in ["out","log","fchk","fch"]:
+                menu.addActions([self.file_gview,self.file_mwfn])
+            if ext in ["cub","cube"]:
+                menu.addActions([self.file_gview,self.file_vmd])
+            if ext in ["chg","wfn"]:
+                menu.addActions([self.file_mwfn])
+            if ext in ["pdb"]:
+                menu.addActions([self.file_gview,self.file_vesta,self.file_vmd,self.file_mwfn])
+            menu.popup(QCursor.pos())
+            menu.show()
+
+        def currentTableFile():
             row = self.file_view.currentIndex().row()
             if row < 0:
                 return
@@ -284,49 +362,64 @@ class DataView(QDockWidget):
             filename = self.file_model.item(row,0).text()
             return os.path.join(dirname,'datas',self.uuid,filename)
 
+        def currentTreeFile():
+            return self.tree_model.filePath(self.tree.currentIndex())
+
         def download():
-            file = currentFile()
+            file = currentTableFile()
             if file != None and not os.path.exists(file):
                 API.downloadFile(self.uuid,file)
 
         def view():
-            file = currentFile()
+            file = currentTreeFile()
             if file != None and os.path.exists(file):
                 os.startfile(file)
 
         def delete():
-            file = currentFile()
-            if file != None and os.path.exists(file):
-                os.remove(file)
+            file = currentTreeFile()
+            os.remove(file)
 
-        def onClick():
-            file = currentFile()
+        def tableClick():
+            file = currentTableFile()
             if file == None:
                 return
             if not os.path.exists(file):
                 API.downloadFile(self.uuid,file)
             os.startfile(file)
 
+        def treeClick():
+            file = currentTreeFile()
+            os.startfile(file)
+
         self.file_down = QAction(QIcon("resource/download.png"),self.tr('Download'),self)
         self.file_read = QAction(QIcon("resource/View.png"),self.tr('View'),self)
         self.file_dele = QAction(QIcon("resource/Delete.png"),self.tr('Delete'),self)
+        self.file_refresh = QAction(QIcon("resource/refresh.png"),self.tr('Refresh'),self)
+        self.file_gview = QAction(QIcon("resource/GaussView.png"),self.tr('GaussView'),self)
+        self.file_vesta = QAction(QIcon("resource/VESTA.png"),self.tr('VESTA'),self)
+        self.file_vmd = QAction(QIcon("resource/VMD.png"),self.tr('VMD'),self)
+        self.file_mwfn = QAction(QIcon("resource/Multiwfn.png"),self.tr('Multiwfn'),self)
 
         self.file_down.triggered.connect(download)
         self.file_read.triggered.connect(view)
         self.file_dele.triggered.connect(delete)
+        self.file_refresh.triggered.connect(self.showExplorer)
+        self.file_gview.triggered.connect(lambda:self.parent.interfaceGaussView(currentTreeFile()))
+        self.file_vesta.triggered.connect(lambda:self.parent.interfaceVESTA(currentTreeFile()))
+        self.file_vmd.triggered.connect(lambda:self.parent.interfaceVMD(currentTreeFile()))
+        self.file_mwfn.triggered.connect(lambda:self.parent.interfaceMultiwfn(currentTreeFile()))
         
         self.file_model = QStandardItemModel(0, 3)
-        self.file_model.setHorizontalHeaderLabels([self.tr("File Name"),self.tr("Modified Time"),self.tr("File Size")])
+        self.file_model.setHorizontalHeaderLabels(["Name","Size","Type","Date Modified"])
         self.file_view = QTableView()
         self.file_view.setModel(self.file_model)
-        self.file_view.verticalHeader().setHidden(True)
+        self.file_view.verticalHeader().setVisible(False)
         self.file_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.file_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.file_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.file_view.horizontalHeader().setStretchLastSection(True)
         self.file_view.horizontalHeader().setHighlightSections(False)
-        #self.file_view.resizeRowsToContents()
         self.file_view.setShowGrid(False)
 
         self.file_view.horizontalHeader().setSortIndicatorShown(True)
@@ -334,26 +427,62 @@ class DataView(QDockWidget):
         self.file_id = 0
         self.file_view.horizontalHeader().sectionClicked.connect(sortTable)
         self.file_view.customContextMenuRequested.connect(self.tryRun(showTableMenu))
-        self.file_view.doubleClicked.connect(onClick)
+        self.file_view.doubleClicked.connect(tableClick)
+
+        self.tree_model = QFileSystemModel()
+        
+        #self.model.setNameFilters(['*.out','*.log','*.tif','*.txt','*.fch','*.fchk','*.chk'])
+        self.tree_model.setFilter(QDir.AllEntries | QDir.NoDotAndDotDot)
+        #self.tree_model.setReadOnly(False)
+        self.tree = QTreeView()
+        self.tree.setModel(self.tree_model)
+        self.tree.setAnimated(False)
+        self.tree.setIndentation(0)
+        self.tree.setSortingEnabled(True)
+        self.tree.setSelectionMode(QTreeView.SingleSelection)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.tryRun(showTreeMenu))
+        self.tree.doubleClicked.connect(treeClick)
+        #self.tree.header().hide()
 
         layout = QVBoxLayout(self.Explorer)
         layout.addWidget(self.file_view)
+        layout.addWidget(self.tree)
 
     def showExplorer(self):
+        #self.setFixedWidth(900)
         self.file_model.removeRows(0,self.file_model.rowCount())
         files = API.getFiles(self.uuid)
         for file in files:
             filename = QStandardItem(file[0])
-            time = QStandardItem(file[1])
+            ext = file[2]
+            if ext in ["chk","fchk","fch","log","out","gjf","cub","cube"]:
+                filename.setIcon(QIcon("resource/GaussView.png"))
+            elif ext in ["pdb","cif","mol","mol2","vasp","xyz"]:
+                filename.setIcon(QIcon("resource/VESTA.png"))
+            elif ext == "txt":
+                filename.setIcon(QIcon("resource/txt.ico"))
+            else:
+                filename.setIcon(QIcon("resource/Blank.ico"))
             size = QStandardItem()
-            size.setData(int(file[2]),Qt.EditRole)
-            self.file_model.appendRow([filename,time,size])
+            size.setData(int(file[1]),Qt.EditRole)
+            types = QStandardItem(file[2] + " File")
+            time = QStandardItem(file[3])
+            self.file_model.appendRow([filename,size,types,time])
         if self.file_id >= 0:
             if self.file_order == "A":
                 self.file_model.sort(self.file_id, Qt.DescendingOrder)
             else:
                 self.file_model.sort(self.file_id, Qt.AscendingOrder)
+        self.file_view.resizeColumnsToContents()
         self.file_view.resizeRowsToContents()
+        self.file_view.resizeColumnsToContents()
+        self.file_view.resizeRowsToContents()
+        root = os.path.join(self.parent.thisDir,'datas',self.uuid)
+        if not os.path.exists(root):
+            os.makedirs(root)
+        self.tree_model.setRootPath(root)
+        self.tree.setRootIndex(self.tree_model.index(root))
 
     def initProperty(self):
         def save(*argv):
@@ -436,6 +565,7 @@ class DataView(QDockWidget):
         self.pro_save.clicked.connect(self.tryRun(save))
 
     def showProperty(self):
+        self.setFixedWidth(360)
         properties = self.parent.db.physic_query(self.uuid)
         if len(properties) == 1:
             properties = properties[0]
@@ -478,6 +608,120 @@ class DataView(QDockWidget):
             self.pro_tensionA.setValue("")
             self.pro_tensionB.setValue("")
             self.pro_pK1.setValue("") 
+
+    def initReactivity(self):
+        self.reax_viewer = QWebEngineView(self)
+        self.reax_viewer.setUrl(QUrl(API._3DMOLURL))
+        self.reax_viewer.page().settings().setAttribute(QWebEngineSettings.ShowScrollBars,False)
+        self.reax_viewer.setFixedHeight(300)
+
+        self.reax_charge = QComboBox(self.Reactivity)
+        self.reax_cdft = QComboBox(self.Reactivity)
+
+        def displayCharge(name):
+            if name != "":
+                data = json.loads(self.reax_charge_data[name])
+                upper = max(max(data),abs(min(data)))
+                pdb = API.geomchg2pdb(self.reax_geom,data)
+                self.reax_viewer.page().runJavaScript(JS_displayCharge % (pdb,-1*upper,upper),lambda *argv:None)
+            else:
+                self.reax_viewer.page().runJavaScript(JS_loadXYZ % API.geom2xyz(self.reax_geom),lambda *argv:None)
+        self.reax_charge_data = {}
+        self.reax_charge.currentTextChanged.connect(self.tryRun(displayCharge))
+
+        def displayCdft(name):
+            if name != "":
+                data = json.loads(self.reax_cdft_data[name])
+                upper = max(data)
+                pdb = API.geomchg2pdb(self.reax_geom,data)
+                self.reax_viewer.page().runJavaScript(JS_displayCharge % (pdb,-1*upper,upper),lambda *argv:None)
+            else:
+                self.reax_viewer.page().runJavaScript(JS_loadXYZ % API.geom2xyz(self.reax_geom),lambda *argv:None)
+        self.reax_cdft_data = {}
+        self.reax_cdft.currentTextChanged.connect(self.tryRun(displayCdft))
+
+        form = QWidget()
+        layout = QVBoxLayout(self.Reactivity)
+        layout.addWidget(self.reax_viewer)
+        layout.addWidget(form)
+        formLayout = QFormLayout(form)
+        formLayout.addRow(QLabel('<font face="Times New Roman">'+self.tr("Atomic Charge")+'</font>'),self.reax_charge)
+        formLayout.addRow(QLabel('<font face="Times New Roman">'+self.tr("Conceptual DFT")+'</font>'),self.reax_cdft)
+
+        self.reax_vip = QDataLineEdit(suffix="<font face='Times New Roman'>eV</font>")
+        self.reax_vea = QDataLineEdit(suffix="<font face='Times New Roman'>eV</font>")
+        self.reax_negativity = QDataLineEdit(suffix="<font face='Times New Roman'>eV</font>")
+        self.reax_potential = QDataLineEdit(suffix="<font face='Times New Roman'>eV</font>")
+        self.reax_hardness = QDataLineEdit(suffix="<font face='Times New Roman'>eV</font>")
+        self.reax_softness = QDataLineEdit(suffix="<font face='Times New Roman'>eV<sup>-1</sup></font>")
+        self.electr_index = QDataLineEdit(suffix="<font face='Times New Roman'>eV</font>")
+        self.nucle_index = QDataLineEdit(suffix="<font face='Times New Roman'>eV</font>")
+
+        infos = {
+            "Vertical IP":self.reax_vip,
+            "Vertical EA":self.reax_vea,
+            "Electro Negativity":self.reax_negativity,
+            "Chemical Potential":self.reax_potential,
+            "Hardness":self.reax_hardness,
+            "Softness":self.reax_softness,
+            "Electrophilicity Index":self.electr_index,
+            "Nucleophilicity Index":self.nucle_index,
+        }
+        for (k,v) in infos.items():
+            t = QLabel('<font face="Times New Roman">'+self.tr(k)+'</font>')
+            formLayout.addRow(t,v)
+        pass
+
+    def showReactivity(self):
+        info = self.parent.db.index_query_id(self.uuid)[0]
+        self.reax_viewer.page().runJavaScript(JS_loadXYZ % info["xyz"],lambda *argv:None)
+        self.reax_charge_data = {}
+        self.reax_cdft_data = {}
+        self.reax_charge.clear()
+        self.reax_cdft.clear()
+
+        summary = self.parent.db.summary_query(self.uuid)
+        if len(summary) == 1:
+            self.reax_geom = json.loads(summary[0]["geometry"])
+        charges = self.parent.db.charge_query(self.uuid)
+        if len(charges) == 1:
+            self.reax_charge_data = charges[0]
+            self.reax_charge.addItem("")
+            isEmpty = True
+            for (key,val) in self.reax_charge_data.items():
+                if key != "uuid" and val != "":
+                    self.reax_charge.addItem(key)
+                    isEmpty = False
+            if isEmpty:
+                self.reax_charge.clear()
+        cdfts = self.parent.db.cdft_query(self.uuid)
+        if len(cdfts) == 1:
+            self.reax_cdft_data = cdfts[0]
+            self.reax_cdft.addItem("")
+            isEmpty = True
+            for (key,val) in self.reax_cdft_data.items():
+                if key in ["f_plus","f_minus","f_zero","cdd","condensed_electr_index","condensed_nucle_index","condensed_softness"] and val != "":
+                    self.reax_cdft.addItem(key)
+                    isEmpty = False
+            if isEmpty:
+                self.reax_cdft.clear()
+            self.reax_vip.setValue(self.reax_cdft_data["vertical_ip"])
+            self.reax_vea.setValue(self.reax_cdft_data["vertical_ea"])
+            self.reax_negativity.setValue(self.reax_cdft_data["electro_negativity"])
+            self.reax_potential.setValue(self.reax_cdft_data["chemical_potential"])
+            self.reax_hardness.setValue(self.reax_cdft_data["hardness"])
+            self.reax_softness.setValue(self.reax_cdft_data["softness"])
+            self.electr_index.setValue(self.reax_cdft_data["electr_index"])
+            self.nucle_index.setValue(self.reax_cdft_data["nucle_index"])
+        else:
+            self.reax_vip.setValue("")
+            self.reax_vea.setValue("")
+            self.reax_negativity.setValue("")
+            self.reax_potential.setValue("")
+            self.reax_hardness.setValue("")
+            self.reax_softness.setValue("")
+            self.electr_index.setValue("")
+            self.nucle_index.setValue("")
 
     def tr(self,text):
         if self.parent:

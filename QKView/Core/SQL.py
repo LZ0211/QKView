@@ -244,6 +244,7 @@ class MoleculeDataBase(object):
         for key in self.index_cols_add:
             q.bindValue(":%s" % key, molecule[key])
         q.exec_()
+        return True
 
     def index_update(self,molecule):
         if molecule == None:
@@ -257,6 +258,7 @@ class MoleculeDataBase(object):
         for key in keys:
             q.bindValue(":%s" % key, molecule[key])
         q.exec_()
+        return True
 
     def index_del(self,uuid):
         if uuid == None or uuid == "":
