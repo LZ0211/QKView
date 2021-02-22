@@ -228,6 +228,12 @@ class Table(QWidget):
                 list.append(self.model.item(i,1).text())
         return list
 
+    def searchItem(self,uuid):
+        for i in range(self.model.rowCount()):
+            if self.model.item(i,1).text() == uuid:
+                return i
+        return -1
+
     def selectAll(self):
         for i in range(self.model.rowCount()):
             self.model.item(i,0).setCheckState(Qt.Checked)

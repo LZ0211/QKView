@@ -110,6 +110,7 @@ class QKView(QMainWindow,MainWindow):
         self.bindTableEvents()
         self.loadDataBase()
         self.configCalculator()
+        self.changeStyle()
         self.show()
         #self.browser.open('http://172.16.11.164/static/indraw/')
 
@@ -193,17 +194,6 @@ class QKView(QMainWindow,MainWindow):
         self.getAction('Add To Queue').triggered.connect(self.addQueue)
 
     def bindTableEvents(self):
-        def showTableMenu():
-            self.table.tableView.contextMenu = QMenu(self)
-            self.table.tableView.contextMenu.addActions([
-                self.getAction('Edit'),
-                self.getAction('Copy'),
-                self.getAction('Delete'),
-                self.getAction("Local Data")
-            ])
-            self.table.tableView.contextMenu.addMenu(self.allMenus["Export"])
-            self.table.tableView.contextMenu.popup(QCursor.pos())
-            self.table.tableView.contextMenu.show()
              
         def search():
             text = self.table.searchText.text()
@@ -244,27 +234,6 @@ class QKView(QMainWindow,MainWindow):
             self.calculator.end()
             pass
 
-        def showDataView():
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            uuid = self.table.model.item(row,1).text()
-            if self.view.uuid == uuid and self.view.isVisible():
-                return
-            self.view.setId(uuid)
-            self.view.setVisible(True)
-
-        def swicthDataView(*argv):
-            if self.view.isHidden():
-                return
-            row = self.table.tableView.currentIndex().row()
-            if row < 0:
-                return
-            uuid = self.table.model.item(row,1).text()
-            if self.view.uuid == uuid:
-                return
-            self.view.setId(uuid)
-
         def updateJobs():
             if self.calculator.isEnd:
                 self.calculator.finish = []
@@ -289,11 +258,10 @@ class QKView(QMainWindow,MainWindow):
             elif name == "binding":
                 self.db.binding_update_insert(json.loads(info))
 
-        
-        self.table.tableView.customContextMenuRequested.connect(showTableMenu)
-        self.table.tableView.doubleClicked.connect(showDataView)
-        #self.table.tableView.clicked.connect(swicthDataView)
-        self.table.tableView.selectionModel().selectionChanged.connect(swicthDataView)
+        self.table.tableView.customContextMenuRequested.connect(self.showTableMenu)
+        self.table.tableView.doubleClicked.connect(self.showDataView)
+        #self.table.tableView.clicked.connect(self.swicthDataView)
+        self.table.tableView.selectionModel().selectionChanged.connect(self.swicthDataView)
 
         self.table.searchBtn.clicked.connect(search)
         self.table.searchText.returnPressed.connect(search)
@@ -319,6 +287,54 @@ class QKView(QMainWindow,MainWindow):
                 invalid.append(group['text'])
         self.quest.setDisableList(invalid)
         pass
+
+    def showTableMenu(self):
+        self.table.tableView.contextMenu = QMenu(self)
+        self.table.tableView.contextMenu.addActions([
+            self.getAction('Edit'),
+            self.getAction('Copy'),
+            self.getAction('Delete'),
+            self.getAction("Local Data")
+        ])
+        self.table.tableView.contextMenu.addMenu(self.allMenus["Export"])
+        self.table.tableView.contextMenu.popup(QCursor.pos())
+        self.table.tableView.contextMenu.show()
+
+    def selectTableRow(self,uuid):
+        rowId = self.table.searchItem(uuid)
+        if rowId >= 0:
+            self.table.tableView.selectRow(rowId)
+
+    def showDataView(self):
+        row = self.table.tableView.currentIndex().row()
+        if row < 0:
+            return
+        uuid = self.table.model.item(row,1).text()
+        if self.view.uuid == uuid and self.view.isVisible():
+            return
+        self.view.setId(uuid)
+        self.view.setVisible(True)
+        self.recordSelection(uuid)
+
+    def swicthDataView(self,*argv):
+        if self.view.isHidden():
+            return
+        row = self.table.tableView.currentIndex().row()
+        if row < 0:
+            return
+        uuid = self.table.model.item(row,1).text()
+        if self.view.uuid == uuid:
+            return
+        self.view.setId(uuid)
+        self.recordSelection(uuid)
+
+    def recordSelection(self,uuid):
+        if int(self.getSetting("UI/recordSelection",0)) > 0:
+            self.setSetting("UI/currentSelection",uuid)
+
+    def removeSelectionRecord(self,uuid):
+        if self.getSetting("UI/currentSelection","") == uuid:
+            self.setSetting("UI/currentSelection","")
 
     def editMolecule(self,input="",type="smi"):
         def add(string):
@@ -541,9 +557,41 @@ class QKView(QMainWindow,MainWindow):
         uuid = self.table.model.item(row,1).text()
         self.db.index_del(uuid)
         self.table.loadDatas(self.db.index_query_all())
+        self.removeSelectionRecord(uuid)
 
     def closeEvent(self, QCloseEvent):
         self.editor.close()
         self.tray.hide()
+        recordWindowPos = int(self.getSetting("UI/recordWindowPos",0)) > 0
+        recordWindowSize = int(self.getSetting("UI/recordWindowSize",0)) > 0
+        if recordWindowPos:
+            self.setSetting("UI/windowPosX",self.pos().x())
+            self.setSetting("UI/windowPosY",self.pos().y())
+        if recordWindowSize:
+            self.setSetting("UI/windowSizeWidth",self.size().width())
+            self.setSetting("UI/windowSizeHeight",self.size().height())
+        if self.isMaximized() and (recordWindowSize or recordWindowPos):
+            self.setSetting("UI/isMaximized",1)
         QCloseEvent.accept()
 
+    def changeStyle(self):
+        uuid = self.getSetting("UI/currentSelection","")
+        rowId = self.table.searchItem(uuid)
+        if uuid != "":
+            rowId = self.table.searchItem(uuid)
+            if rowId > 0:
+                self.selectTableRow(uuid)
+                if int(self.getSetting("UI/displayDataAtStartUp",0)):
+                    self.view.setVisible(True)
+                    self.view.setId(uuid)
+        isMaximized = int(self.getSetting("UI/isMaximized",0)) > 0
+        W = self.getSetting("UI/windowSizeWidth","")
+        H = self.getSetting("UI/windowSizeHeight","")
+        X = self.getSetting("UI/windowPosX","")
+        Y = self.getSetting("UI/windowPosY","")
+        if W != "" and H != "":
+            self.resize(int(W),int(H))
+        if X != "" and Y != "":
+            self.move(int(X),int(Y))
+        if isMaximized:
+            self.showMaximized()

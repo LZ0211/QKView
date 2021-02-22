@@ -140,20 +140,20 @@ class Preference(QWidget):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
 
-        def switchSketcher(name):
-            self.setSetting("UI/Sketcher",name)
-            if self.parent:
-                self.parent.editor.initSketcher()
+        # def switchSketcher(name):
+        #     self.setSetting("UI/Sketcher",name)
+        #     if self.parent:
+        #         self.parent.editor.initSketcher()
 
-        self.sketcherOptions = QComboBox(self)
-        self.sketcherOptions.addItems(['Sketcher','Indraw'])
-        self.sketcherOptions.currentTextChanged.connect(switchSketcher)
-        self.sketcherOptions.setCurrentText(self.getSetting("UI/Sketcher","Indraw"))
+        # self.sketcherOptions = QComboBox(self)
+        # self.sketcherOptions.addItems(['Sketcher','Indraw'])
+        # self.sketcherOptions.currentTextChanged.connect(switchSketcher)
+        # self.sketcherOptions.setCurrentText(self.getSetting("UI/Sketcher","Indraw"))
 
-        self.molViewerOptions = QComboBox(self)
-        self.molViewerOptions.addItems(['3Dmol','3Dview'])
-        self.molViewerOptions.currentTextChanged.connect(lambda str:self.setSetting("UI/3DViewer",str))
-        self.molViewerOptions.setCurrentText(self.getSetting("UI/3DViewer","3Dmol"))
+        # self.molViewerOptions = QComboBox(self)
+        # self.molViewerOptions.addItems(['3Dmol','3Dview'])
+        # self.molViewerOptions.currentTextChanged.connect(lambda str:self.setSetting("UI/3DViewer",str))
+        # self.molViewerOptions.setCurrentText(self.getSetting("UI/3DViewer","3Dmol"))
 
         self.recordWindowSize = SwitchButton(self)
         self.recordWindowSize.valueChanged.connect(lambda val:self.setSetting("UI/recordWindowSize",val))
@@ -178,8 +178,8 @@ class Preference(QWidget):
         self.recordSelection.setValue(int(self.getSetting("UI/recordSelection",0)))
         self.displayDataAtStartUp.setValue(int(self.getSetting("UI/displayDataAtStartUp",0)))
 
-        layout.addRow(self.tr("Sketcher"),self.sketcherOptions)
-        layout.addRow(self.tr("3dViewer"),self.molViewerOptions)
+        #layout.addRow(self.tr("Sketcher"),self.sketcherOptions)
+        #layout.addRow(self.tr("3dViewer"),self.molViewerOptions)
         layout.addRow(self.tr("Record Window Size"),self.recordWindowSize)
         layout.addRow(self.tr("Record Window Position"),self.recordWindowPos)
         layout.addRow(self.tr("Record Selection"),self.recordSelection)
@@ -361,7 +361,7 @@ class Preference(QWidget):
 
     def display(self,index):
         self.stack.setCurrentIndex(index)
-        self.setSetting("Display/Preference",index)
+        self.setSetting("UI/Preference",index)
 
     def getSetting(self,key,value):
         if self.parent:
@@ -381,6 +381,8 @@ class Preference(QWidget):
         if self.parent:
             self.parent.setDisabled(True)
         event.accept()
+        index = self.getSetting("UI/Preference",0)
+        self.stack.setCurrentIndex(index)
 
     def tr(self,text):
         if self.parent:

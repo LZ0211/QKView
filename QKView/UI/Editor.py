@@ -64,15 +64,9 @@ class Editor(QWidget):
             self.browser.setWindowFlags(Qt.WindowStaysOnTopHint)
             self.parent.browser = self.browser
         self.initUI()
-        self.initSketcher()
+        self.sketcher = Indraw(self)
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
-        self.func = None
-
-    def initSketcher(self):
-        if self.parent.getSetting("UI/Sketcher","Sketcher") == "Sketcher":
-            self.sketcher = Sketcher(self)
-        else:
-            self.sketcher = Indraw(self)
+        self.funcs = []
 
     def initUI(self):
         self.setGeometry(0, 0, 360, 500)
@@ -125,7 +119,7 @@ class Editor(QWidget):
         self.Save.clicked.connect(self.saveMolecule)
         self.PubChem.clicked.connect(self.openPubChem)
 
-        self.finished.connect(lambda x:self.func and self.func(x))
+        self.finished.connect(lambda x:[f(x) for f in self.funcs])
         #formLayout.addWidget(QLabel(self.translate("UUID")), 0, 0, 1, 3)
         #formLayout.addWidget(self.UUID, 0, 3, 1, 7)
         formLayout.addWidget(QLabel(self.tr("SMILES")), 1, 0, 1, 3)
@@ -336,7 +330,7 @@ class Editor(QWidget):
         self.Structure.setFixedSize(width,height)
 
     def once(self,fn):
-        self.func = fn
+        self.funcs.append(fn)
         # def func(*argv):
         #     fn(*argv)
         #     self.finished.disconnect(func)
@@ -345,7 +339,7 @@ class Editor(QWidget):
     def closeEvent(self, event):
         self.sketcher.close()
         self.browser.close()
-        self.func = None
+        self.funcs = []
         if self.parent:
             self.parent.setEnabled(True)
         event.accept()

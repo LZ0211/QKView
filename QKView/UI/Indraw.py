@@ -5,30 +5,39 @@ from PyQt5.QtGui import QIcon, QPixmap
 from ..Core import API
 import time,requests
 
-JS_forbidden = '''trigger = $.prototype.trigger;
-$.prototype.trigger = function(name){
-    if(name == 'contextmenu') return
-    trigger.call(this,name)
+Script = '''<script>
+window.isReady = false;
+$(window).on("load",function(){
+    window.isReady = true;
+    trigger = $.prototype.trigger;
+    $.prototype.trigger = function(name){
+        if(name == 'contextmenu') return
+        trigger.call(this,name)
+    }
+    var _ = function(name){return document.querySelector(name) || {}}
+    try{
+        _('#structure-search').style = "display:none";
+        //_('.scale-value-wrap').style = "display:none";
+        _('a[data-name="showLogo"]').style = "display:none";
+        _('a[data-name="feedbackNew"]').style = "display:none";
+        _('#action-mp-topbottom').style = "display:none";
+        _('#action-mp-center').style = "display:none";
+        _('#action-mp-acs').style = "display:none";
+        _('#action-mp-nmr').style = "display:none";
+        _('#action-mp-textSearch').style = "display:none";
+        //_('#action-mp-zoomIn').style = "display:none";
+        //_('#action-mp-zoomOut').style = "display:none";
+        _('#action-mp-hint').style = "display:none";
+        _('#action-mp-tlc').style = "display:none";
+        _('#action-mp-svgtemplate-56').style = "display:none";
+        //_('#action-mp-savefullpic').style = "display:none";
+    }catch(e){}
+});
+function render(mol){
+    if(window.isReady) return molpad.loadMOL(mol);
+    setTimeout(function(){render(mol)},100);
 }
-var _ = function(name){return document.querySelector(name) || {}}
-try{
-    _('#structure-search').style = "display:none";
-    //_('.scale-value-wrap').style = "display:none";
-    _('a[data-name="showLogo"]').style = "display:none";
-    _('a[data-name="feedbackNew"]').style = "display:none";
-    _('#action-mp-topbottom').style = "display:none";
-    _('#action-mp-center').style = "display:none";
-    _('#action-mp-acs').style = "display:none";
-    _('#action-mp-nmr').style = "display:none";
-    _('#action-mp-textSearch').style = "display:none";
-    //_('#action-mp-zoomIn').style = "display:none";
-    //_('#action-mp-zoomOut').style = "display:none";
-    _('#action-mp-hint').style = "display:none";
-    _('#action-mp-tlc').style = "display:none";
-    _('#action-mp-svgtemplate-56').style = "display:none";
-    //_('#action-mp-savefullpic').style = "display:none";
-}catch(e){}
-'''
+</script>'''
 
 JS_getImage = '''
 function getImage(){
@@ -40,9 +49,18 @@ getImage()
 
 JS_loadCanvas2D = 'molpad.loadMOL(`%s`)'
 
-JS_loadSMILES = '''
-molpad.mol.loadSMILES(`%s`)
+JS_loadCanvas2D_Timeout = '''
+var timer = setInterval(function(){
+    if(window.isReady){
+        clearInterval(timer);
+        setTimeout(function(){
+            molpad.loadMOL(`%s`);
+        },200);
+    };
+},200);
 '''
+
+JS_loadSMILES = 'molpad.mol.loadSMILES(`%s`)'
 
 JS_getCurrentMol = '''
 function getImage(){
@@ -88,29 +106,22 @@ class Indraw(QWidget):
         self.webView = QWebEngineView()
         #self.webView.setFixedSize(400,400)
         #self.webView.settings().setDefaultTextEncoding("iso-8859-1")
-        self.webView.loadFinished.connect(lambda:self.execute(JS_forbidden))
-        self.webView.loadFinished.connect(self.ready)
-        self.webView.setHtml(requests.get(API.IndrawURL).text,QUrl("http://indrawforweb.integle.com/indraw_inline/"))
+        self.webView.setHtml(requests.get(API.IndrawURL).text + Script,QUrl("http://indrawforweb.integle.com/indraw_inline/"))
         #self.webView.load(QUrl(API.IndrawURL+"?"+str(time.time())))
-        self.webView.show()
-
         self.confirm = QPushButton(self.tr('Save'))
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal,self)
         layout.addRow(self.webView)
         layout.addRow(self.buttonBox)
 
     def loadMolecule(self,mol):
-        def run():
-            self.execute(JS_loadCanvas2D % mol)
-            self.webView.loadFinished.disconnect(run)
-            self.show()
-
         if self.isReady:
             self.execute(JS_loadCanvas2D % mol)
             self.show()
         else:
             self.webView.show()
-            self.webView.loadFinished.connect(run)
+            self.execute(JS_loadCanvas2D_Timeout % mol)
+            self.show()
+            self.isReady = True
 
     def bindConfirmEvent(self):
         def updateMol(arr):
@@ -136,6 +147,7 @@ class Indraw(QWidget):
         self.confirmed.connect(func)
 
     def noop(self,*argv):
+        print(*argv)
         pass
 
     def closeEvent(self, event):

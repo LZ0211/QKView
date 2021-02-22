@@ -111,9 +111,10 @@ viewer.zoomTo();
 viewer.render(noop);
 '''
 
-JS_loadMOL = '''var mol = `%s`
-transformer3d.loadMolecule(ChemDoodle.readMOL(mol,1))
-'''
+JS_loadMOL = 'load(`%s`)'
+
+def noop(*argv):
+    print(*argv)
 
 class DataView(QDockWidget):
     def __init__(self,str,parent=None):
@@ -177,12 +178,15 @@ class DataView(QDockWidget):
         self.showDataContent()
 
     def initSummary(self):
+        self.summary_isReady = False
         self.summary_3dView = QWebEngineView(self)
         self.summary_3dView.setUrl(QUrl(API._3DViewURL))
         self.summary_3dView.page().settings().setAttribute(QWebEngineSettings.ShowScrollBars,False)
         self.summary_3dView.setFixedHeight(200)
         #self._3dView.setFixedWidth(300)
-        #self._3dView.loadFinished.connect(lambda:self.execute(JS_test))
+        def ready():
+            self.summary_isReady=True
+        self.summary_3dView.loadFinished.connect(ready)
         self.summary_smiles = QLineEdit("")
         self.summary_formular = QLineEdit("")
         self.summary_name = QLineEdit("")
@@ -225,9 +229,11 @@ class DataView(QDockWidget):
         pass
 
     def showSummary(self):
+        if not self.summary_isReady:
+            self.summary_3dView.loadFinished.connect(self.showSummary)
         #self.setFixedWidth(360)
         info = self.parent.db.index_query_id(self.uuid)[0]
-        self.summary_3dView.page().runJavaScript(JS_loadMOL % API.xyz2mol(info["xyz"]),lambda *argv:None)
+        self.summary_3dView.page().runJavaScript(JS_loadMOL % API.xyz2mol(info["xyz"]),noop) 
         self.summary_smiles.setText(info["smiles"])
         self.summary_formular.setText(info["formular"])
         self.summary_name.setText(info["name"])
@@ -373,7 +379,13 @@ class DataView(QDockWidget):
         def view():
             file = currentTreeFile()
             if file != None and os.path.exists(file):
+                openFile(file)
+
+        def openFile(file):
+            try:
                 os.startfile(file)
+            except:
+                pass
 
         def delete():
             file = currentTreeFile()
@@ -385,11 +397,11 @@ class DataView(QDockWidget):
                 return
             if not os.path.exists(file):
                 API.downloadFile(self.uuid,file)
-            os.startfile(file)
+            openFile(file)
 
         def treeClick():
             file = currentTreeFile()
-            os.startfile(file)
+            openFile(file)
 
         self.file_down = QAction(QIcon("resource/download.png"),self.tr('Download'),self)
         self.file_read = QAction(QIcon("resource/View.png"),self.tr('View'),self)
@@ -623,9 +635,9 @@ class DataView(QDockWidget):
                 data = json.loads(self.reax_charge_data[name])
                 upper = max(max(data),abs(min(data)))
                 pdb = API.geomchg2pdb(self.reax_geom,data)
-                self.reax_viewer.page().runJavaScript(JS_displayCharge % (pdb,-1*upper,upper),lambda *argv:None)
+                self.reax_viewer.page().runJavaScript(JS_displayCharge % (pdb,-1*upper,upper),noop)
             else:
-                self.reax_viewer.page().runJavaScript(JS_loadXYZ % API.geom2xyz(self.reax_geom),lambda *argv:None)
+                self.reax_viewer.page().runJavaScript(JS_loadXYZ % API.geom2xyz(self.reax_geom),noop)
         self.reax_charge_data = {}
         self.reax_charge.currentTextChanged.connect(self.tryRun(displayCharge))
 
@@ -634,9 +646,9 @@ class DataView(QDockWidget):
                 data = json.loads(self.reax_cdft_data[name])
                 upper = max(data)
                 pdb = API.geomchg2pdb(self.reax_geom,data)
-                self.reax_viewer.page().runJavaScript(JS_displayCharge % (pdb,-1*upper,upper),lambda *argv:None)
+                self.reax_viewer.page().runJavaScript(JS_displayCharge % (pdb,-1*upper,upper),noop)
             else:
-                self.reax_viewer.page().runJavaScript(JS_loadXYZ % API.geom2xyz(self.reax_geom),lambda *argv:None)
+                self.reax_viewer.page().runJavaScript(JS_loadXYZ % API.geom2xyz(self.reax_geom),noop)
         self.reax_cdft_data = {}
         self.reax_cdft.currentTextChanged.connect(self.tryRun(displayCdft))
 
@@ -674,7 +686,7 @@ class DataView(QDockWidget):
 
     def showReactivity(self):
         info = self.parent.db.index_query_id(self.uuid)[0]
-        self.reax_viewer.page().runJavaScript(JS_loadXYZ % info["xyz"],lambda *argv:None)
+        self.reax_viewer.page().runJavaScript(JS_loadXYZ % info["xyz"],noop)
         self.reax_charge_data = {}
         self.reax_cdft_data = {}
         self.reax_charge.clear()

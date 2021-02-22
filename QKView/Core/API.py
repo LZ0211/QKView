@@ -22,7 +22,7 @@ TIMEOUT = 5
 SketcherURL = HOST + "/static/sketcher/"
 IndrawURL = HOST + "/static/indraw/index.html"
 _3DMOLURL = HOST + "/static/3dmol/" + "?t=" + str(time.time())
-_3DViewURL = HOST + "/static/3dview/"
+_3DViewURL = HOST + "/static/3dview/" + "?t=" + str(time.time())
 
 def mol2can(mol):
     url = HOST + '/job/submit/obabel/mol2can'
